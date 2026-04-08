@@ -1,0 +1,50 @@
+{
+  "language": "English",
+  "org_id": "00000000-0000-0000-0000-000000000000",
+  "org_context": {
+    "client_name": "string",
+    "org_description": "string",
+    "offerings": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": "string"
+        }
+      ]
+    },
+    "terminology_mapping": [
+      {
+        "original": "string",
+        "replacement": "string"
+      },
+      {
+        "original": "string",
+        "replacement": "string"
+      },
+      {
+        "original": "string",
+        "replacement": "string"
+      }
+    ],
+    "taxonomy": [
+      {
+        "term": "string",
+        "definition": "string"
+      },
+      {
+        "term": "string",
+        "definition": "string"
+      }
+    ],
+    "location_operations": [
+      "string",
+      "string",
+      "string",
+      "string"
+    ]
+  }
+}

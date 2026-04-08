@@ -1,0 +1,36 @@
+{
+    "language": "string",
+    "org_id": "string",
+    "org_context": {
+        "client_name": "string",
+        "org_description": "string",
+        "offerings": {
+            "oneOf": [
+                {
+                    "type": "array",
+                    "items": "string"
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": "string"
+                }
+            ]
+        },
+        "terminology_mapping": [
+            {
+                "original": "string",
+                "replacement": "string"
+            }
+        ],
+        "taxonomy": [
+            {
+                "term": "string",
+                "definition": "string"
+            }
+        ],
+        "location_operations": [
+            "string",
+            "string"
+        ]
+    }
+}

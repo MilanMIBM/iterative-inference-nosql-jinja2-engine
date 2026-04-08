@@ -1,0 +1,34 @@
+{
+    "optional_scalar_field": {
+        "client_name": "{% if client_name %}Organization Name: {{ client_name }}\n\n{% endif %}",
+        "org_description": "{% if org_description %}Organization Description: {{ org_description }}\n\n{% endif %}",
+        "location_operations": "{% if location_operations %}Location/Operations: {{ location_operations }}\n\n{% endif %}"
+    },
+    "conditional_type_branched_render": {
+        "presence_guard": "{% if offerings %}...{% endif %}",
+        "dict_branch": "{% if offerings is mapping %}\n{% for key, value in offerings.items() %}{{ key }}\n\n{{ value }}{% if not loop.last %}\n\n---\n\n{% endif %}\n{% endfor %}",
+        "list_branch": "{% else %}\n{% for value in offerings %}{{ value }}\n\n---\n\n{% endfor %}{% endif %}",
+        "separator_suppress_on_last": "{% if not loop.last %}\n\n---\n\n{% endif %}",
+        "combined": "{% if offerings %}Offerings: {% if offerings is mapping %}\n{% for key, value in offerings.items() %}{{ key }}\n\n{{ value }}{% if not loop.last %}\n\n---\n\n{% endif %}\n{% endfor %}{% else %}\n{% for value in offerings %}{{ value }}\n\n---\n\n{% endfor %}{% endif %}\n\n{% endif %}"
+    },
+    "loop_with_first_item_header": {
+        "terminology_mapping": {
+            "for_loop": "{% for term in terminology_mapping %}...{% endfor %}",
+            "first_item_header": "{% if loop.first %}Terminology Mapping:\n{% endif %}",
+            "field_rendering": "{{ term.original }}\nReplace with: {{ term.replacement }}\n\n",
+            "combined": "{% for term in terminology_mapping %}{% if loop.first %}Terminology Mapping:\n{% endif %}{{ term.original }}\nReplace with: {{ term.replacement }}\n\n{% endfor %}"
+        },
+        "taxonomy": {
+            "for_loop": "{% for item in taxonomy %}...{% endfor %}",
+            "first_item_header": "{% if loop.first %}Taxonomy of Terms:\n{% endif %}",
+            "field_rendering": "{{ item.term }}\nDefinition: {{ item.definition }}\n\n",
+            "combined": "{% for item in taxonomy %}{% if loop.first %}Taxonomy of Terms:\n{% endif %}{{ item.term }}\nDefinition: {{ item.definition }}\n\n{% endfor %}"
+        }
+    },
+    "conditional_loop_with_bullet_prefix": {
+        "presence_guard": "{% if options %}...{% endif %}",
+        "for_loop_with_prefix": "{% for option in options %}- {{ option }}\n{% endfor %}",
+        "combined": "{% if options %}Question Options:\n{% for option in options %}- {{ option }}\n{% endfor %}\n\n{% endif %}"
+    },
+    "optional_block_field": "{% if output_structure_example %}Reference Output Structure Example:\n\n {{ output_structure_example }}\n {% endif %}"
+}

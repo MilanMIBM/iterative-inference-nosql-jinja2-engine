@@ -1,0 +1,23 @@
+{
+    "set_id": "00000000-0000-0000-0000-000000000000",
+    "name": "<system templates set name>",
+    "description": "<system template description>",
+    "system_templates": {
+        "context": "Jinja 2 template of your context {% if <key> %}<Context key name>: {{ <key> }}\n\n{% endif %}...",
+        "system_prompt": "Utilize the provided input context to generate iteratively generate the result. If there are previous outputs, build upon that work that was done previously to create a cohesive end result. Output must only include the resulting YAML data structure encased between ----- | \n<result>\n | ----- delimiters around it,\n\n{% if options %}Output Options:\n{% for option in options %}- {{ option }}\n{% endfor %}\n\n{% endif %}\n\n{% if output_structure_example %}Reference Output Structure Example:\n\n {{ output_structure_example }}\n {% endif %}",
+        "options": [
+            "<yaml schema for data output>",
+            "<yaml schema for data output>"
+        ],
+        "output_structure_example": "----- | \n<example output of filled yaml schema>\n | -----",
+        "next_question_user_message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Generate Next Output."
+                }
+            ]
+        }
+    }
+}

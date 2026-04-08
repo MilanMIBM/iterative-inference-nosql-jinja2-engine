@@ -1,0 +1,131 @@
+{
+  "language": "English",
+  "org_id": "FF330101-022E-408E-B000-198696DD8953",
+  "org_context": {
+    "client_name": "Den Norske Veritas",
+    "org_description": "Det Norske Veritas (DNV) is an international accredited registrar and classification society headquartered in Høvik, Norway. DNV provides services for several industries, including maritime, oil and gas, renewable energy, electrification, and healthcare. As of 10 January 2024, the company has about 15,000 employees and 350 offices operating in more than 100 countries and provides services for several industries. In 2013, Det Norske Veritas (Norway) and Germanischer Lloyd (Germany), two prominent organizations in the industry, merged to form DNV GL. The company later simplified its name to DNV in 2021, while maintaining the organizational structure that resulted from the merger. DNV provides services for 13,175 vessels and mobile offshore units (MOUs), amounting to 265.4 million gross tonnes, which represents a global market share of 21%. 65% of the world's offshore pipelines are designed and installed to DNV's technical standards. Prior to the merger, both DNV and GL had independently acquired several companies in different sectors, such as Hélimax Energy (Canada), Garrad Hassan (UK), Windtest (Germany) and KEMA (Netherlands). DNV also invests in research.",
+    "offerings": {
+      "[Energy] Floating wind energy certification": "Following several successful prototypes and demonstration projects around the world, floating offshore wind is now taking the first steps in commercialization. In any major critical infrastructure project, stakeholders want reassurance that all possible steps have been taken to minimize risk and maximize the chances of a successful project. And with an emerging technology like floating wind that reassurance is even more important.\n\nIndependent certification is the most trusted route to deliver stakeholder confidence. By validating the project/equipment against an accepted standard, certification shows that risks have been understood and minimized. DNV offers a complete service for certifying floating offshore wind turbines and plants against either our own comprehensive standard or the one from IEC.\n\nIn floating wind, the wind energy industry and the maritime industry are meeting in the deep waters. In DNV certification, we allow for integrating a DNV-classed floating substructure and mooring system into project certification. This harmonized solution provides compliance with both assurance approaches (certification and classification) and allows for new collaboration and alliances between stakeholders that come from different backgrounds.\n\nComprehensive certification\nOur floating wind energy certification is based on the DNV-ST-0119 standard and DNV-SE-0422 service specification. These documents provide the most comprehensive technical reference suite for this floating wind, and can be applied to complete wind farms, individual turbines and their components.\n\nThe modular certification approach covers all development levels from early concept to commercial project and includes assessment of:\n\nDesign basis\nBasic design\nDesign\nFabrication\nTransport and installation\nCommissioning\nIn-service",
+      "[Energy] Escrow services for renewable energy projects": "Why escrow matters in renewable energy\nModern renewable energy projects increasingly depend on proprietary software, specialized engineering, and third-party systems. Whether you're deploying wind, solar, battery storage, or hydrogen projects, the availability of up-to-date technical documentation and source files is essential to ensuring operational continuity, maintenance, and future scalability.\n\nIf a project partner fails, exits the market, or changes ownership, access to essential files can be lost-disrupting operations and increasing compliance risks. DNV acts as a neutral and internationally recognized third-party escrow agent, mitigating these risks by holding and verifying business-critical documents on behalf of all contractual parties.\n\nOur escrow solutions\nService\tDeposit\tDeposit & review\tReview of external deposits\nCustomized contract including review of legal amendments\t√\t√\t√\nAnti-virus scan\t√\t√\tn/a\nSecure storage of documents\t√\t√\tn/a\nTechnical verification of escrowed data\tn/a\t√\t√\nConfirmation letter\t√\t√\t√\nOne yearly update of escrowed data\t√\toptional\tn/a\nProtect your renewable energy assets\nConnect with our experts to explore how DNV's escrow services can enhance the resilience of your renewable energy projects. From wind and solar to battery storage and hydrogen systems, we help ensure secure access to critical technical documentation and IP-supporting long-term asset performance, compliance, and risk mitigation.\n\nContact our experts for further information and pricing."
+    },
+    "terminology_mapping": [
+      {
+        "original": "Customer",
+        "replacement": "Client"
+      },
+      {
+        "original": "Review",
+        "replacement": "Audit"
+      },
+      {
+        "original": "Approval",
+        "replacement": "Certification"
+      },
+      {
+        "original": "Standards",
+        "replacement": "Technical Standards"
+      },
+      {
+        "original": "Checklist",
+        "replacement": "Compliance Checklist"
+      }
+    ],
+    "taxonomy": [
+      {
+        "term": "Classification",
+        "definition": "The process of verifying that a vessel or offshore structure complies with DNV's technical standards and rules for design, construction, and operation."
+      },
+      {
+        "term": "Certification",
+        "definition": "Formal attestation that a product, system, or process meets specified standards and regulatory requirements."
+      },
+      {
+        "term": "Accreditation",
+        "definition": "Official recognition that DNV is competent to perform specific conformity assessment activities such as audits and certifications."
+      },
+      {
+        "term": "Type Approval",
+        "definition": "Confirmation that a product or component conforms to DNV's rules and standards for a specific application or use case."
+      },
+      {
+        "term": "Surveyor",
+        "definition": "A DNV specialist who conducts inspections, audits, and assessments to verify compliance with technical standards and regulations."
+      }
+    ],
+    "location_operations": [
+      "Argentina",
+      "Brazil",
+      "Canada",
+      "Chile",
+      "Mexico",
+      "Panama",
+      "Trinidad and Tobago",
+      "USA",
+      "Austria",
+      "Azerbaijan",
+      "Belgium",
+      "Bulgaria",
+      "Croatia",
+      "Cyprus",
+      "Czech Republic",
+      "Denmark",
+      "Estonia",
+      "Faroe Islands",
+      "Finland",
+      "France",
+      "Germany",
+      "Greece",
+      "Greenland",
+      "Hungary",
+      "Iceland",
+      "Ireland",
+      "Italy",
+      "Kazakhstan",
+      "Latvia",
+      "Lithuania",
+      "Malta",
+      "Netherlands",
+      "Norway",
+      "Poland",
+      "Portugal",
+      "Romania",
+      "Russian Federation",
+      "Slovakia",
+      "Spain",
+      "Sweden",
+      "Türkiye",
+      "Ukraine",
+      "United Kingdom",
+      "Angola",
+      "Bahrain",
+      "Egypt",
+      "Ghana",
+      "Israel",
+      "Kenya",
+      "Kuwait",
+      "Libya",
+      "Morocco",
+      "Nigeria",
+      "Oman",
+      "Qatar",
+      "Saudi Arabia",
+      "South Africa",
+      "United Arab Emirates",
+      "Australia",
+      "Bangladesh",
+      "Brunei Darussalam",
+      "Greater China",
+      "India",
+      "Indonesia",
+      "Japan",
+      "Korea",
+      "Malaysia",
+      "New Zealand",
+      "Philippines",
+      "Singapore",
+      "Sri Lanka",
+      "Thailand",
+      "Vietnam"
+    ]
+  }
+}

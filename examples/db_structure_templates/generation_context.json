@@ -1,0 +1,67 @@
+{
+    "iteration_id": "string",
+    "user_id": "foreign_keystring",
+    "org_id": "foreign_keystring",
+    "next_question_user_message": {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "string"
+            }
+        ]
+    },
+    "parameter_set_name": "foreign_keystring",
+    "system_template_name": "foreign_keystring",
+    "iteration_length": 1,
+    "language": "foreign_keystring",
+    "user_context": {
+        "description": "string",
+        "goal": "string",
+        "comments": "string"
+    },
+    "generation_content": {
+        "messages": [
+            {
+                "role": "system",
+                "content": "string"
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "string"
+                    }
+                ]
+            }
+        ],
+        "results": [
+            {
+                "iteration": 1,
+                "output_types": [
+                    "string"
+                ],
+                "output_data": [
+                    {}
+                ],
+                "usage": {
+                    "completion_tokens": 0,
+                    "prompt_tokens": 0,
+                    "total_tokens": 0
+                }
+            }
+        ],
+        "metadata": {
+            "created_at": "datetime",
+            "total_tokens": 0,
+            "iterations_completed": 0,
+            "last_token_count": {
+                "completion_tokens": 0,
+                "prompt_tokens": 0,
+                "total_tokens": 0
+            },
+            "last_updated": "datetime"
+        }
+    }
+}

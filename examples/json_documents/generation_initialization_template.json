@@ -1,0 +1,43 @@
+{
+    "iteration_id": "00000000-0000-0000-0000-000000000000",
+    "user_id": "00000000-0000-0000-0000-000000000000",
+    "org_id": "00000000-0000-0000-0000-000000000000",
+    "parameter_set_name": "foreign_keystring",
+    "system_template_name": "foreign_keystring",
+    "iteration_length": 1,
+    "language": "string",
+    "user_context": {
+        "description": "string",
+        "goal": "string",
+        "comments": "string"
+    },
+    "generation_content": {
+        "messages": [
+            {
+                "role": "system",
+                "content": "{{ system_prompt }}{% if context %}\n\nContext:\n{{ context }}{% endif %}{% if language %}\n\nOutput Language: {{ language }}{% endif %}"
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "{% if user_context %}{% for key, value in user_context.items() %}{% if value %}\n{{ key | replace('_', ' ') | title }}: {{ value }}{% endif %}{% endfor %}{% endif %}"
+                    }
+                ]
+            }
+        ],
+        "results": [],
+        "metadata": {
+            "created_at": "datetime",
+            "total_tokens": 0,
+            "iterations_completed": 0,
+            "last_token_count": {
+                "completion_tokens": 0,
+                "prompt_tokens": 0,
+                "total_tokens": 0
+            },
+            "last_updated": "datetime"
+        }
+    }
+}

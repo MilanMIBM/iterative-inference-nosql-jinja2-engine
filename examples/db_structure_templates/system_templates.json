@@ -1,0 +1,23 @@
+{
+    "set_id": "string",
+    "name": "string",
+    "description": "string",
+    "system_templates": {
+        "context": "string",
+        "system_prompt": "string",
+        "options": [
+            "string",
+            "string"
+        ],
+        "output_structure_example": "string",
+        "next_question_user_message": {
+            "role": "string",
+            "content": [
+                {
+                    "type": "string",
+                    "text": "string"
+                }
+            ]
+        }
+    }
+}

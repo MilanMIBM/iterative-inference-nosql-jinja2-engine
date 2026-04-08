@@ -1,0 +1,26 @@
+[project]
+name = "iterative-inference-nosql-jinja2-engine"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "astrapy>=2.2.1",
+    "certifi>=2026.2.25",
+    "elasticsearch>=9.3.0",
+    "ibm-secrets-manager-sdk>=2.1.19",
+    "ibm-watsonx-ai>=1.5.5",
+    "ibmcloudant>=0.11.5",
+    "jinja2>=3.1.6",
+    "jsonpath-python>=1.1.5",
+    "marimo[mcp]>=0.21.1",
+    "pandas>=2.3.3",
+    "pydantic-ai>=1.73.0",
+    "pymongo>=4.16.0",
+    "python-dotenv>=1.2.2",
+    "requests>=2.33.0",
+    "ruff>=0.15.8",
+    "ty>=0.0.26",
+    "uv>=0.11.2",
+    "wigglystuff>=0.3.1",
+]
