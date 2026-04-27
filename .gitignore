@@ -92,3 +92,9 @@ Thumbs.db
 *_backup.*
 *_old.*
 plans/
+src/utils/ac_env.bash
+src/utils/add_envs.bash
+wxo_inference.py
+/backups
+db_connect.py
+iterative_generation_demonstration_v2.1.py

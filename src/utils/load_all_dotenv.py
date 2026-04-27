@@ -1,21 +1,23 @@
 from pathlib import Path
 from dotenv import load_dotenv
+import os
 import sys
 
 
-def load_all_dotenv(path=".", verbose=True):
+def load_all_dotenv(path=".", verbose=True, override=True):
     """Load all .env files from a directory or a single .env file.
 
     Args:
         path: Either a directory path to load all .env files from or a specific .env file path.
         Defaults to current directory.
         verbose: If True, print status messages. Defaults to False.
+        override: If True, overrides the current value on reloading the env files.
     """
     path_obj = Path(path)
 
     if path_obj.is_file():
         # Load single file
-        load_dotenv(path_obj)
+        load_dotenv(path_obj, override=override)
         if verbose:
             print(f"✓ Loaded: {path_obj}")
     elif path_obj.is_dir():
@@ -25,7 +27,7 @@ def load_all_dotenv(path=".", verbose=True):
             if verbose:
                 print(f"⚠ No .env files found in: {path_obj}")
         for env_file in env_files:
-            load_dotenv(env_file)
+            load_dotenv(env_file, override=override)
             if verbose:
                 print(f"✓ Loaded: {env_file}")
     else:
@@ -34,5 +36,5 @@ def load_all_dotenv(path=".", verbose=True):
 
 if __name__ == "__main__":
     path = sys.argv[1] if len(sys.argv) > 1 else "."
-    load_all_dotenv(path, verbose=True)
+    load_all_dotenv(path, verbose=True, override=True)
     print(f"\nCompleted loading .env files from: {path}")

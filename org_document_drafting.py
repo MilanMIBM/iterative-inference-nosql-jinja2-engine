@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.22.5"
+__generated_with = "0.23.0"
 app = marimo.App(width="full")
 
 with app.setup:
@@ -23,6 +23,7 @@ def _():
     from src.helpers.nosql_database_helper_functions import (
         initialize_cloudant_database,
         initialize_astradb_database,
+        initialize_mongodb_database,
         upload_single_document,
     )
 
@@ -43,6 +44,7 @@ def _():
         columns_from_template,
         initialize_astradb_database,
         initialize_cloudant_database,
+        initialize_mongodb_database,
         marimo_create_data_editor_df,
         upload_single_document,
     )
@@ -55,12 +57,20 @@ def _():
     astradb_keyspace = os.getenv("ASTRA_DB_KEYSPACE", "default_keyspace")
     cloudant_url = os.getenv("CLOUDANT_URL", "")
     cloudant_apikey = os.getenv("CLOUDANT_APIKEY", "")
+    mongodb_endpoint = os.getenv("MONGODB_ENDPOINT", "")
+    mongodb_username = os.getenv("MONGODB_USERNAME", "")
+    mongodb_password = os.getenv("MONGODB_PASSWORD", "")
+    mongodb_cert_path = os.getenv("MONGODB_CERT_PATH", "")
     return (
         astradb_api_endpoint,
         astradb_application_token,
         astradb_keyspace,
         cloudant_apikey,
         cloudant_url,
+        mongodb_cert_path,
+        mongodb_endpoint,
+        mongodb_password,
+        mongodb_username,
     )
 
 
@@ -77,7 +87,7 @@ def _(db_provider):
 @app.cell
 def _():
     db_provider = mo.ui.dropdown(
-        ["cloudant", "astradb"],
+        ["cloudant", "astradb", "mongodb"],
         value="cloudant",
         allow_select_none=False,
         label="**Select Context Database Backend:**",
@@ -124,9 +134,32 @@ def _(
 
 
 @app.cell
-def _(astradb, cloudant, db_provider):
+def _(
+    initialize_mongodb_database,
+    mongodb_cert_path,
+    mongodb_endpoint,
+    mongodb_password,
+    mongodb_username,
+):
+    mongodb = (
+        initialize_mongodb_database(
+            mongodb_endpoint, mongodb_username, mongodb_password, mongodb_cert_path
+        )
+        if mongodb_endpoint and mongodb_username and mongodb_password
+        else None
+    )
+    return (mongodb,)
+
+
+@app.cell
+def _(astradb, cloudant, db_provider, mongodb):
     active_db_provider = db_provider.value
-    active_db_client = astradb if active_db_provider == "astradb" else cloudant
+    if active_db_provider == "astradb":
+        active_db_client = astradb
+    elif active_db_provider == "mongodb":
+        active_db_client = mongodb
+    else:
+        active_db_client = cloudant
     return active_db_client, active_db_provider
 
 
@@ -424,9 +457,10 @@ def _(
                 doc=context_document,
                 provider=active_db_provider,
             )
-            provider_label = (
-                "AstraDB" if active_db_provider == "astradb" else "Cloudant"
-            )
+            provider_label = {
+                "astradb": "AstraDB",
+                "mongodb": "MongoDB",
+            }.get(active_db_provider, "Cloudant")
             status_printout = (
                 f"Uploaded document under **{org_id}** org_id to "
                 f"**{db_org_context}** ({provider_label})"
@@ -434,11 +468,6 @@ def _(
     else:
         org_id = status_printout = None
     return (status_printout,)
-
-
-@app.cell
-def _():
-    return
 
 
 if __name__ == "__main__":

@@ -9,6 +9,8 @@ from pathlib import Path
 import certifi
 import marimo as mo
 from astrapy import DataAPIClient
+from pymongo import MongoClient
+from pymongo.database import Database as MongoDatabase
 from jinja2 import Environment, UndefinedError
 import json
 import uuid
@@ -24,11 +26,13 @@ import re
 
 
 def _detect_backend(db_client, provider: Optional[str] = None) -> str:
-    """Return 'cloudant' or 'astradb' based on client type or explicit provider."""
+    """Return 'cloudant', 'astradb', or 'mongodb' based on client type or explicit provider."""
     if provider:
         return provider.strip().lower()
     if isinstance(db_client, CloudantV1):
         return "cloudant"
+    if isinstance(db_client, MongoDatabase):
+        return "mongodb"
     return "astradb"
 
 
@@ -142,21 +146,27 @@ def ensure_database_exists(
     db_client,
     db_name: str,
     provider: Optional[str] = None,
+    create: bool = True,
 ) -> bool:
     """
     Ensure the target database/collection exists.
 
     For Cloudant, checks if the database exists and creates it if not.
-    For AstraDB, this is a no-op (collections are accessed directly).
+    For AstraDB, checks if the collection exists and creates it if not.
+    For MongoDB, collections are created implicitly on first write.
 
     Args:
-        db_client: Initialized database client (CloudantV1 or AstraDB Database).
-        db_name: Database name (Cloudant) or collection name (AstraDB).
-        provider: Optional explicit backend ("cloudant" or "astradb").
+        db_client: Initialized database client (CloudantV1, AstraDB Database,
+            or MongoDB Database).
+        db_name: Database name (Cloudant) or collection name (AstraDB/MongoDB).
+        provider: Optional explicit backend ("cloudant", "astradb", or "mongodb").
             When omitted the backend is detected from the client type.
+        create: If True (default), create the database/collection when it does
+            not exist. If False, only check existence and return False when missing.
 
     Returns:
-        True if the database exists or was created successfully.
+        True if the database/collection exists or was created successfully.
+        False if it does not exist and create is False.
     """
     backend = _detect_backend(db_client, provider)
 
@@ -165,6 +175,8 @@ def ensure_database_exists(
             db_client.get_database_information(db=db_name)
             return True
         except Exception:
+            if not create:
+                return False
             try:
                 db_client.put_database(db=db_name)
                 return True
@@ -172,7 +184,30 @@ def ensure_database_exists(
                 print(f"Failed to create database {db_name}: {str(e)}")
                 raise
 
-    # AstraDB - collections are accessed directly, no explicit creation needed.
+    if backend == "astradb":
+        try:
+            existing = set(db_client.list_collection_names())
+            if db_name not in existing:
+                if not create:
+                    return False
+                db_client.create_collection(db_name)
+            return True
+        except Exception as e:
+            print(f"Failed to ensure AstraDB collection {db_name}: {str(e)}")
+            raise
+
+    if backend == "mongodb":
+        try:
+            existing = set(db_client.list_collection_names())
+            if db_name not in existing:
+                if not create:
+                    return False
+                db_client.create_collection(db_name)
+            return True
+        except Exception as e:
+            print(f"Failed to ensure MongoDB collection {db_name}: {str(e)}")
+            raise
+
     return True
 
 
@@ -198,12 +233,42 @@ def retrieve_documents(
             and AstraDB-style dict formats.
         limit: Maximum number of documents to return. Defaults to 100.
         docs_only: If True, returns only the documents list.
-        provider: Optional explicit backend ("cloudant" or "astradb").
+        provider: Optional explicit backend ("cloudant","astradb","mongodb").
 
     Returns:
         dict with 'docs' key (full response) or list of dicts (docs_only=True).
     """
     backend = _detect_backend(db_client, provider)
+
+    # Check if the target database/collection/table exists before querying.
+    if backend == "cloudant":
+        try:
+            db_client.get_database_information(db=db_name)
+        except Exception:
+            print(f"{db_name} does not exist")
+            return []
+    elif backend == "astradb":
+        if db_client is None:
+            print(f"{db_name} does not exist")
+            return []
+        try:
+            if db_name not in set(db_client.list_collection_names()):
+                print(f"{db_name} does not exist")
+                return []
+        except Exception:
+            print(f"{db_name} does not exist")
+            return []
+    elif backend == "mongodb":
+        if db_client is None:
+            print(f"{db_name} does not exist")
+            return []
+        try:
+            if db_name not in set(db_client.list_collection_names()):
+                print(f"{db_name} does not exist")
+                return []
+        except Exception:
+            print(f"{db_name} does not exist")
+            return []
 
     try:
         if backend == "astradb":
@@ -226,6 +291,34 @@ def retrieve_documents(
             normalized_fields = _normalize_fields(fields)
             if normalized_fields is not None:
                 docs = _project_docs(docs, normalized_fields)
+
+            if docs_only:
+                return docs
+            return {"docs": docs}
+
+        if backend == "mongodb":
+            if db_client is None:
+                return [] if docs_only else {"docs": []}
+
+            collection = db_client[db_name]
+
+            normalized_fields = _normalize_fields(fields)
+            projection = None
+            if normalized_fields is not None:
+                projection = {f: 1 for f in normalized_fields}
+
+            mongo_sort = _normalize_sort(sort)
+            sort_list = list(mongo_sort.items()) if mongo_sort is not None else None
+
+            cursor = collection.find(selectors, projection)
+            if sort_list is not None:
+                cursor = cursor.sort(sort_list)
+            cursor = cursor.limit(limit)
+
+            docs = list(cursor)
+            for doc in docs:
+                if "_id" in doc and not isinstance(doc["_id"], str):
+                    doc["_id"] = str(doc["_id"])
 
             if docs_only:
                 return docs
@@ -294,7 +387,7 @@ def bulk_update_docs(
         db_name: Target database/collection name.
         docs: List of document dicts to update.
         batch_size: Number of documents per bulk operation. Defaults to 100.
-        provider: Optional explicit backend ("cloudant" or "astradb").
+        provider: Optional explicit backend ("cloudant","astradb","mongodb").
 
     Returns:
         List of bulk operation response dicts.
@@ -303,6 +396,8 @@ def bulk_update_docs(
 
     if not docs:
         raise ValueError("No documents provided for update.")
+
+    ensure_database_exists(db_client, db_name, provider=backend)
 
     try:
         if backend == "astradb":
@@ -352,6 +447,52 @@ def bulk_update_docs(
 
             return responses
 
+        if backend == "mongodb":
+            for i, doc in enumerate(docs):
+                if "_id" not in doc:
+                    raise ValueError(
+                        f"Document at index {i} is missing '_id'. "
+                        "This is required to update an existing MongoDB document."
+                    )
+            if db_client is None:
+                raise ValueError("MongoDB client is None. Cannot perform bulk update.")
+
+            collection = db_client[db_name]
+            batches = [
+                docs[i : i + batch_size] for i in range(0, len(docs), batch_size)
+            ]
+
+            responses: list = []
+            for batch in mo.status.progress_bar(
+                batches,
+                title="Updating MongoDB documents",
+                subtitle=f"Updating {len(docs)} document(s) in '{db_name}'",
+                remove_on_exit=True,
+            ):
+                batch_responses = []
+                try:
+                    for doc in batch:
+                        doc_id = doc["_id"]
+                        update_data = {k: v for k, v in doc.items() if k != "_id"}
+                        result = collection.update_one(
+                            {"_id": doc_id},
+                            {"$set": update_data},
+                        )
+                        batch_responses.append(
+                            {
+                                "id": doc_id,
+                                "ok": result.matched_count > 0,
+                                "matched_count": result.matched_count,
+                                "modified_count": result.modified_count,
+                            }
+                        )
+                    responses.append(batch_responses)
+                except Exception as e:
+                    print(f"Error updating batch in '{db_name}': {e}")
+                    raise
+
+            return responses
+
         # --- Cloudant path ---
         for i, doc in enumerate(docs):
             if "_id" not in doc or "_rev" not in doc:
@@ -360,7 +501,6 @@ def bulk_update_docs(
                     "Both are required to update an existing Cloudant document."
                 )
 
-        ensure_database_exists(db_client, db_name, provider=backend)
         batches = [docs[i : i + batch_size] for i in range(0, len(docs), batch_size)]
 
         responses = []
@@ -416,7 +556,7 @@ def bulk_upload_docs(
         db_name: Target database/collection name.
         docs: Documents - dict with 'results' key or direct list.
         batch_size: Number of documents per bulk operation. Defaults to 100.
-        provider: Optional explicit backend ("cloudant" or "astradb").
+        provider: Optional explicit backend ("cloudant","astradb","mongodb").
 
     Returns:
         List of bulk operation responses.
@@ -463,6 +603,23 @@ def bulk_upload_docs(
                 raise
         return responses
 
+    if backend == "mongodb":
+        responses: list = []
+        for batch in mo.status.progress_bar(
+            batches,
+            title="Uploading to MongoDB",
+            subtitle=f"Uploading {len(results_list)} documents",
+            remove_on_exit=True,
+        ):
+            try:
+                collection = db_client[db_name]
+                result = collection.insert_many(batch)
+                responses.append([str(oid) for oid in result.inserted_ids])
+            except Exception as e:
+                print(f"Error uploading batch: {str(e)}")
+                raise
+        return responses
+
     # --- Cloudant path ---
     responses = []
     for batch in mo.status.progress_bar(
@@ -499,7 +656,7 @@ def upload_single_document(
         doc: Document to upload.
         doc_id: Custom document ID. If not provided, a UUID with date suffix
             will be generated.
-        provider: Optional explicit backend ("cloudant" or "astradb").
+        provider: Optional explicit backend ("cloudant","astradb","mongodb").
 
     Returns:
         Response dict containing document ID information.
@@ -521,6 +678,11 @@ def upload_single_document(
         result = collection.insert_one(doc)
         return {"id": result.inserted_id, "ok": True}
 
+    if backend == "mongodb":
+        collection = db_client[db_name]
+        result = collection.insert_one(doc)
+        return {"id": str(result.inserted_id), "ok": True}
+
     # --- Cloudant path ---
     response = db_client.post_document(db=db_name, document=doc).get_result()
     return response
@@ -541,7 +703,7 @@ def get_document_schema(
         db_name: Database/collection name to query.
         selectors: JSON object describing criteria used to select documents.
         limit: Maximum number of documents to sample for schema. Defaults to 1.
-        provider: Optional explicit backend ("cloudant" or "astradb").
+        provider: Optional explicit backend ("cloudant","astradb","mongodb").
 
     Returns:
         JSON schema dict with property names and inferred types.
@@ -797,6 +959,63 @@ def render_jinja2_templates(
 
 
 # ---------------------------------------------------------------------------
+# Miscellaneous Support Functions
+# ---------------------------------------------------------------------------
+
+
+def check_database_status(
+    db_names: Union[str, List[str]],
+    db_client,
+    db_provider: Optional[str] = None,
+    create: bool = False,
+) -> List[dict]:
+    """
+    Check if databases exist and return status with emojis.
+
+    Args:
+        db_names: A single database/collection name or a list of names to check.
+        db_client: Initialized database client (CloudantV1, AstraDB Database,
+            or MongoDB Database).
+        db_provider: Optional explicit backend ("cloudant", "astradb", or "mongodb").
+            When omitted the backend is detected from the client type.
+        create: If True, create the database/collection when it does not exist.
+            Defaults to False (check only).
+
+    Returns:
+        A list of dicts, one per database name, each containing:
+            - db_name: The database/collection name.
+            - status: True if exists, False otherwise.
+            - display_marker: ✅ if exists, ❌ otherwise.
+    """
+    if isinstance(db_names, str):
+        db_names = [db_names]
+
+    results = []
+    for db_name in db_names:
+        try:
+            exists = ensure_database_exists(
+                db_client, db_name, db_provider, create=create
+            )
+            results.append(
+                {
+                    "db_name": db_name,
+                    "status": exists,
+                    "display_marker": "✅" if exists else "❌",
+                }
+            )
+        except Exception as e:
+            results.append(
+                {
+                    "db_name": db_name,
+                    "status": False,
+                    "display_marker": "❌",
+                }
+            )
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Database initialisation (inherently provider-specific)
 # ---------------------------------------------------------------------------
 
@@ -812,6 +1031,57 @@ def initialize_astradb_database(
 
     client = DataAPIClient(token=token)
     return client.get_database(api_endpoint=api_endpoint, keyspace=keyspace or None)
+
+
+def initialize_mongodb_database(
+    endpoint: str,
+    username: str,
+    password: str,
+    cert_path: Optional[str] = None,
+) -> Optional[MongoDatabase]:
+    """Initialize MongoDB Database client; return None when required inputs are missing.
+
+    Builds the connection URI from discrete credentials matching the
+    ``_mongodb_ibm.env.TEMPLATE`` layout (MONGODB_ENDPOINT, MONGODB_USERNAME,
+    MONGODB_PASSWORD, MONGODB_CERT_PATH).
+
+    The *endpoint* value is expected to contain the full MongoDB URI
+    (including the database name in the path component), e.g.::
+
+        mongodb://HOST:PORT/ibmclouddb?authSource=admin&replicaSet=replset&tls=true
+
+    Username and password placeholders (``$USERNAME``, ``$PASSWORD``) in the
+    endpoint are replaced at runtime. If TLS is used, *cert_path* should
+    point to the PEM certificate file.
+
+    Args:
+        endpoint: MongoDB connection URI (may contain ``$USERNAME`` /
+            ``$PASSWORD`` placeholders).
+        username: MongoDB username.
+        password: MongoDB password.
+        cert_path: Optional path to a TLS/SSL PEM certificate file.
+
+    Returns:
+        A ``pymongo.database.Database`` instance, or ``None`` when required
+        inputs are missing.
+    """
+    if not endpoint or not username or not password:
+        return None
+
+    connection_string = endpoint.replace("$USERNAME", username).replace(
+        "$PASSWORD", password
+    )
+
+    client_kwargs: Dict[str, Any] = {}
+    if cert_path:
+        resolved_cert = os.path.abspath(cert_path)
+        if os.path.isfile(resolved_cert):
+            client_kwargs["tls"] = True
+            client_kwargs["tlsCAFile"] = resolved_cert
+
+    client = MongoClient(connection_string, **client_kwargs)
+    db_name = client.get_default_database().name
+    return client[db_name]
 
 
 def initialize_cloudant_database(
@@ -893,7 +1163,7 @@ def upload_folder_to_database(
         skip_corrupted: If True, skip files with '_corrupted' in name.
             Defaults to True.
         batch_size: Number of documents per bulk operation. Defaults to 100.
-        provider: Optional explicit backend ("cloudant" or "astradb").
+        provider: Optional explicit backend ("cloudant","astradb","mongodb").
 
     Returns:
         List of bulk operation responses.
@@ -936,7 +1206,7 @@ def upload_example_documents(
             "GENERATION_CONTEXT": "generation_context"}
         skip_corrupted: If True, skip files with '_corrupted' in name.
             Defaults to True.
-        provider: Optional explicit backend ("cloudant" or "astradb").
+        provider: Optional explicit backend ("cloudant","astradb","mongodb").
 
     Returns:
         Dict mapping database names to their upload responses.
@@ -1010,7 +1280,7 @@ def create_iteration_document(
         starter_messages: Starting system prompt and user input messages
             (fallback template in function).
         language: Desired output language.
-        provider: Optional explicit backend ("cloudant" or "astradb").
+        provider: Optional explicit backend ("cloudant","astradb","mongodb").
 
     Returns:
         Created iteration document.
@@ -1060,12 +1330,16 @@ def create_iteration_document(
         },
     }
 
+    ensure_database_exists(db_client, db_name, provider=backend)
+
     try:
         if backend == "astradb":
             collection = db_client.get_collection(db_name)
             collection.insert_one(iteration_doc)
+        elif backend == "mongodb":
+            collection = db_client[db_name]
+            collection.insert_one(iteration_doc)
         else:
-            ensure_database_exists(db_client, db_name, provider=backend)
             db_client.post_document(db=db_name, document=iteration_doc).get_result()
 
         return iteration_doc
@@ -1098,12 +1372,14 @@ def update_iteration_document(
         new_results: New results to append.
         token_count: Token usage information.
         update_messages: If provided, overwrites the entire messages list.
-        provider: Optional explicit backend ("cloudant" or "astradb").
+        provider: Optional explicit backend ("cloudant","astradb","mongodb").
 
     Returns:
         Updated iteration document.
     """
     backend = _detect_backend(db_client, provider)
+
+    ensure_database_exists(db_client, db_name, provider=backend)
 
     try:
         iteration_docs = retrieve_documents(
@@ -1155,6 +1431,11 @@ def update_iteration_document(
             doc_id = iteration_doc["_id"]
             update_data = {k: v for k, v in iteration_doc.items() if k != "_id"}
             collection.update_one(filter={"_id": doc_id}, update={"$set": update_data})
+        elif backend == "mongodb":
+            collection = db_client[db_name]
+            doc_id = iteration_doc["_id"]
+            update_data = {k: v for k, v in iteration_doc.items() if k != "_id"}
+            collection.update_one({"_id": doc_id}, {"$set": update_data})
         else:
             db_client.post_document(db=db_name, document=iteration_doc).get_result()
 

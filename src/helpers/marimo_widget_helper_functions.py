@@ -1,5 +1,6 @@
 import pandas as pd
-from typing import Union
+from typing import Union, Optional
+import marimo as mo
 import json
 
 
@@ -123,6 +124,79 @@ def columns_from_template(
         return {k: _infer_dtype(v) for k, v in sample.items()}
 
     return {"value": _infer_dtype(sample)}
+
+
+def marimo_autorefresh(
+    interval: Union[int, float, str] = "5s",
+    *,
+    mo=mo,
+):
+    """Create a hidden auto-refresh ticker that periodically re-runs a cell.
+
+    Marimo does not allow reading ``ui.refresh.value`` in the same cell that
+    creates the widget.  This helper works around that constraint via
+    ``mo.state``: an ``on_change`` callback increments a state counter each
+    time the ticker fires, and reading the state getter in a *separate* cell
+    is what triggers that cell to re-run.
+
+    **Two-cell usage (required by marimo's reactive model)**::
+
+        # ── Cell 1 ──────────────────────────────────────────────────────────
+        ticker, get_tick = marimo_autorefresh("10s", mo=mo)
+        # Nothing else needed here; ticker is already hidden.
+
+        # ── Cell 2 ──────────────────────────────────────────────────────────
+        get_tick()          # reading this re-runs the cell every 10 s
+        # your polling / display logic here …
+
+    ``get_tick()`` returns the cumulative fire count (0 on first run, 1 after
+    the first interval, etc.).  You can use it to skip work on the initial
+    render::
+
+        count = get_tick()
+        if count == 0:
+            mo.stop(True, "waiting for first tick…")
+
+    Args:
+        interval: Refresh cadence.  Accepts the same formats as
+            ``mo.ui.refresh``: a number in seconds (``int`` or ``float``) or a
+            human-readable string such as ``"5s"``, ``"1m"``, ``"1m 30s"``.
+            Defaults to ``"5s"``.
+        mo: The ``marimo`` module injected into every notebook cell.  Must be
+            passed explicitly because it is not importable outside the marimo
+            runtime.
+
+    Returns:
+        A ``(ticker, get_tick)`` tuple where *ticker* is the hidden
+        ``mo.ui.refresh`` widget (already appended to cell output as an
+        invisible element) and *get_tick* is the ``mo.state`` getter whose
+        value increments on every refresh fire.
+
+    Raises:
+        ValueError: If *mo* is not provided.
+    """
+    if mo is None:
+        raise ValueError(
+            "marimo_autorefresh() requires the marimo module: pass `mo=mo`."
+        )
+
+    get_tick, set_tick = mo.state(0)
+
+    ticker = mo.ui.refresh(
+        default_interval=interval,
+        on_change=lambda _: set_tick(lambda n: n + 1),
+    )
+
+    # Append the widget as an invisible element so marimo registers it as a
+    # reactive dependency of this cell without showing anything to the user.
+    mo.output.append(
+        mo.Html(
+            '<div style="display:none;height:0;overflow:hidden" '
+            f'aria-hidden="true">{ticker}</div>'
+        )
+    )
+
+    return ticker, get_tick
 
 
 def marimo_create_data_editor_df(

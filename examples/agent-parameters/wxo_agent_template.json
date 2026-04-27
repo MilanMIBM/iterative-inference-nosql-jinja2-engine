@@ -1,0 +1,32 @@
+{
+    "agent_parameter_set_name": "mistral-medium-2505_single_generation",
+    "agent": true,
+    "provider": "wxo",
+    "parameters": {
+        "agent_name": "mistralai/mistral-medium-2505",
+        "params": {
+            "frequency_penalty": 0,
+            "logprobs": false,
+            "max_completion_tokens": 2048,
+            "n": 1,
+            "presence_penalty": 0,
+            "response_format": {
+                "type": "text"
+            },
+            "stop": [
+                "</s>",
+                "| -----\n----- |",
+                "| -----\n\n----- |",
+                "| ----- \n ----- |",
+                "| ----- \n\n ----- |",
+                "| ----- \n----- |",
+                "| ----- \n\n----- |",
+                "| -----\n ----- |",
+                "| -----\n\n ----- |",
+                "| ----- |"
+            ],
+            "temperature": 0.7,
+            "top_p": 1
+        }
+    }
+}

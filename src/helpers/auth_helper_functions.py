@@ -7,7 +7,7 @@ def get_iam_token(api_key, only_token=True):
     Args:
         api_key: IBM Cloud API key
         only_token: If True, return only the access token string.
-                   If False, return the full response object.
+                    If False, return the full response object.
 
     Returns:
         str or Response: Access token string if only_token=True,
@@ -39,7 +39,7 @@ def auth_iam_token(api_key, only_token=True):
     Args:
         api_key: IBM Cloud API key
         only_token: If True, return only the access token string.
-                   If False, return the full token response dict.
+                    If False, return the full token response dict.
 
     Returns:
         str or dict: Access token string if only_token=True,
@@ -106,6 +106,144 @@ def generate_zen_auth_header(username, api_key):
     encoded = base64.b64encode(credentials.encode()).decode()
 
     return f"ZenApiKey {encoded}"
+
+
+def get_wxo_token(
+    api_key: str,
+    instance_url: str = None,
+    auth_type: str = "ibm_iam",
+    iam_url: str = None,
+    username: str = None,
+    password: str = None,
+) -> str:
+    """Get a WXO bearer token, mirroring the ADK CLI auth flow.
+
+    Corresponds to:
+        orchestrate env add -n <name> -u <instance_url> --type <auth_type>
+        orchestrate env activate <name> --api-key <api_key>
+
+    Auth types:
+        "ibm_iam"  (default) - IBM Cloud IAM; for .cloud.ibm.com instances.
+        "mcsp"               - MCSP v1, falls back to v2; for orchestrate.ibm.com instances.
+        "mcsp_v2"            - MCSP v2 explicit; requires instance_url with "instances/<id>".
+        "cpd"                - Cloud Pak for Data (on-prem); requires username + api_key or password.
+
+    Args:
+        api_key:       WXO / IBM Cloud API key (--api-key).
+        instance_url:  WXO service-instance URL (--url). Required for mcsp_v2 and cpd.
+        auth_type:     One of "ibm_iam", "mcsp", "mcsp_v2", "cpd". Defaults to "ibm_iam".
+        iam_url:       Optional override for the IAM/auth endpoint.
+        username:      CPD username (cpd only).
+        password:      CPD password (cpd only; mutually exclusive with api_key).
+
+    Returns:
+        str: Raw JWT access token (no "Bearer " prefix).
+
+    Raises:
+        ValueError: On invalid auth_type or missing required arguments.
+    """
+    auth_type = auth_type.lower()
+
+    if auth_type == "ibm_iam":
+        from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
+
+        authenticator = IAMAuthenticator(apikey=api_key, url=iam_url)
+        return authenticator.token_manager.get_token()
+
+    elif auth_type == "mcsp":
+        from ibm_cloud_sdk_core.authenticators import (
+            MCSPAuthenticator,
+            MCSPV2Authenticator,
+        )
+
+        try:
+            url = iam_url or "https://iam.platform.saas.ibm.com"
+            authenticator = MCSPAuthenticator(apikey=api_key, url=url)
+            return authenticator.token_manager.get_token()
+        except Exception:
+            url = iam_url or "https://account-iam.platform.saas.ibm.com"
+            instance_id = instance_url.split("instances/")[1]
+            authenticator = MCSPV2Authenticator(
+                apikey=api_key,
+                url=url,
+                scope_collection_type="services",
+                scope_id=instance_id,
+            )
+            return authenticator.token_manager.get_token()
+
+    elif auth_type == "mcsp_v2":
+        from ibm_cloud_sdk_core.authenticators import MCSPV2Authenticator
+
+        if not instance_url:
+            raise ValueError("instance_url is required for mcsp_v2 auth.")
+        url = iam_url or "https://account-iam.platform.saas.ibm.com"
+        instance_id = instance_url.split("instances/")[1]
+        authenticator = MCSPV2Authenticator(
+            apikey=api_key,
+            url=url,
+            scope_collection_type="services",
+            scope_id=instance_id,
+        )
+        return authenticator.token_manager.get_token()
+
+    elif auth_type == "cpd":
+        from ibm_cloud_sdk_core.authenticators import CloudPakForDataAuthenticator
+
+        if not instance_url:
+            raise ValueError("instance_url is required for cpd auth.")
+        if not username:
+            raise ValueError("username is required for cpd auth.")
+        if api_key and password:
+            raise ValueError(
+                "Provide either api_key or password for cpd auth, not both."
+            )
+        if not api_key and not password:
+            raise ValueError("Either api_key or password is required for cpd auth.")
+        cpd_iam_url = iam_url or f"{instance_url.split('/orchestrate')[0]}/icp4d-api"
+        authenticator = CloudPakForDataAuthenticator(
+            username=username,
+            password=password or None,
+            apikey=api_key or None,
+            url=cpd_iam_url,
+            disable_ssl_verification=True,
+        )
+        return authenticator.token_manager.get_token()
+
+    else:
+        raise ValueError(
+            f"Unsupported auth_type '{auth_type}'. Choose from: ibm_iam, mcsp, mcsp_v2, cpd."
+        )
+
+
+def build_wxo_call_meta(
+    instance_url: str, token: str, is_local: bool = False, api_version: str = "v1"
+) -> dict:
+    """Build the base URL and Authorization header for WXO REST calls.
+
+    Mirrors the ADK's BaseAPIClient setup: appends "/v1/orchestrate" for remote
+    instances or "/v1" for local Developer Edition servers, and formats the
+    bearer token header.
+
+    Args:
+        instance_url:  WXO service-instance URL (trailing slash stripped).
+        token:         Raw JWT bearer token from get_wxo_token().
+        is_local:      True when targeting a local Developer Edition server
+                        (localhost / 127.0.0.1 / etc.).
+        api_version:   Version of the API (currently v1 or v2) for different calls
+
+    Returns:
+        dict with keys:
+            "base_url" - versioned API base URL (str)
+            "headers"  - {"Authorization": "Bearer <token>"} (dict)
+    """
+    base = instance_url.rstrip("/")
+    base_url = (
+        f"{base}/{api_version}" if is_local else f"{base}/{api_version}/orchestrate"
+    )
+    return {
+        "base_url": base_url,
+        "headers": {"Authorization": f"Bearer {token}"},
+    }
 
 
 if __name__ == "__main__":
