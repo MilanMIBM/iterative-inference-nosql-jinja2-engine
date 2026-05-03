@@ -114,24 +114,24 @@ def _(db_provider):
     )
     print(db_org_context)
     db_messages = (
-        "survey_context".replace("_", "-")
+        "generation_context".replace("_", "-")
         if db_provider.value == "cloudant"
-        else "survey_context"
+        else "generation_context"
     )
     print(db_messages)
-    db_modelparams = (
+    db_model_params = (
         "model_parameters".replace("_", "-")
         if db_provider.value == "cloudant"
         else "model_parameters"
     )
-    print(db_modelparams)
+    print(db_model_params)
     db_system_templates = (
         "system_templates".replace("_", "-")
         if db_provider.value == "cloudant"
         else "system_templates"
     )
     print(db_system_templates)
-    return db_messages, db_modelparams, db_org_context, db_system_templates
+    return db_messages, db_model_params, db_org_context, db_system_templates
 
 
 @app.cell
@@ -240,7 +240,7 @@ def _(client, default_chat_model):
 def _(
     active_db_client,
     active_db_provider,
-    db_modelparams,
+    db_model_params,
     default_model_params,
     param_target,
     retrieve_documents,
@@ -249,7 +249,7 @@ def _(
         retrieve_documents(
             provider=active_db_provider,
             db_client=active_db_client,
-            db_name=db_modelparams,
+            db_name=db_model_params,
             selectors={"parameter_set_name": {"$eq": param_target.value}},
             fields=["parameters"],
             docs_only=True,
@@ -269,7 +269,6 @@ def _(default_chat_model, model_params):
     class ModelSelector:
         def __init__(self, value):
             self.value = value
-
 
     selected_model = (
         model_params.get("model_id") if model_params else default_chat_model
@@ -340,7 +339,7 @@ def _(default_chat_model):
 def _(
     active_db_client,
     active_db_provider,
-    db_modelparams,
+    db_model_params,
     default_parameter_set,
     retrieve_documents,
 ):
@@ -350,7 +349,7 @@ def _(
             retrieve_documents(
                 provider=active_db_provider,
                 db_client=active_db_client,
-                db_name=db_modelparams,
+                db_name=db_model_params,
                 selectors={"parameter_set_name": {"$exists": True}},
                 fields=["parameter_set_name"],
                 docs_only=True,
@@ -370,7 +369,7 @@ def _(
                 retrieve_documents(
                     provider=active_db_provider,
                     db_client=active_db_client,
-                    db_name=db_modelparams,
+                    db_name=db_model_params,
                     selectors={"parameter_set_name": {"$exists": True}},
                     fields=["parameter_set_name"],
                     docs_only=True,
@@ -379,9 +378,7 @@ def _(
                 else []
             )
             if not model_param_targets:
-                model_param_targets = [
-                    {"parameter_set_name": default_parameter_set}
-                ]
+                model_param_targets = [{"parameter_set_name": default_parameter_set}]
             parameter_set_names = {
                 param.get("parameter_set_name") for param in model_param_targets
             }
@@ -851,25 +848,17 @@ def _(
     # Derive iteration_id from the messages_to_render cell output
     if isinstance(messages_to_render, dict):
         _iter_docs = messages_to_render.get("docs", [])
-        created_iteration_id = (
-            _iter_docs[0].get("iteration_id") if _iter_docs else None
-        )
+        created_iteration_id = _iter_docs[0].get("iteration_id") if _iter_docs else None
 
     if client is not None and messages is not None and number_of_iterations:
         for iteration in range(number_of_iterations):
             # Generate response
-            iteration_inference_result = model_inference.chat(
-                messages=current_messages
-            )
+            iteration_inference_result = model_inference.chat(messages=current_messages)
             all_inference_results.append(iteration_inference_result)
 
             # Extract the assistant's response
-            if iteration_inference_result and iteration_inference_result.get(
-                "choices"
-            ):
-                assistant_message = iteration_inference_result["choices"][0][
-                    "message"
-                ]
+            if iteration_inference_result and iteration_inference_result.get("choices"):
+                assistant_message = iteration_inference_result["choices"][0]["message"]
                 current_messages.append(assistant_message)
 
                 # Parse YAML from the raw response content
@@ -1015,9 +1004,7 @@ def _(
             )
             if retrieved_iteration:
                 all_iteration_results = (
-                    retrieved_iteration[0]
-                    .get("generation_content", {})
-                    .get("results")
+                    retrieved_iteration[0].get("generation_content", {}).get("results")
                 )
     return
 
@@ -1116,9 +1103,7 @@ def _(all_inference_choices, completed_generation):
                 choice_num = idx + 1
                 label = f"Inference Choice Response {choice_num}"
 
-                message_content = output_choice.get("message", {}).get(
-                    "content", ""
-                )
+                message_content = output_choice.get("message", {}).get("content", "")
                 choice_markdown = []
                 choice_raw_content = []
 
@@ -1260,7 +1245,7 @@ def _(
     active_db_provider,
     check_database_status,
     db_messages,
-    db_modelparams,
+    db_model_params,
     db_org_context,
     db_system_templates,
 ):
@@ -1270,7 +1255,7 @@ def _(
             check_database_status(
                 [
                     db_messages,
-                    db_modelparams,
+                    db_model_params,
                     db_org_context,
                     db_system_templates,
                 ],
@@ -1287,7 +1272,7 @@ def _(
     active_db_provider,
     check_database_status,
     db_messages,
-    db_modelparams,
+    db_model_params,
     db_org_context,
     db_system_templates,
     set_up_missing_dbs,
@@ -1298,7 +1283,7 @@ def _(
             check_database_status(
                 [
                     db_messages,
-                    db_modelparams,
+                    db_model_params,
                     db_org_context,
                     db_system_templates,
                 ],
@@ -1313,7 +1298,7 @@ def _(
                 check_database_status(
                     [
                         db_messages,
-                        db_modelparams,
+                        db_model_params,
                         db_org_context,
                         db_system_templates,
                     ],
@@ -1337,9 +1322,7 @@ def _(active_db_provider, db_validation_df):
             show_download=False,
             selection=None,
             label=f"Selected provider: **{active_db_provider}**",
-            text_justify_columns={
-                col: "center" for col in db_validation_df.columns
-            },
+            text_justify_columns={col: "center" for col in db_validation_df.columns},
         )
         if db_validation_df is not None
         else mo.ui.table([{}])

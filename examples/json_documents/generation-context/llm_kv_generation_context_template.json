@@ -1,0 +1,48 @@
+{
+  "iteration_id": "00000000-0000-0000-0000-000000000000",
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "org_id": "00000000-0000-0000-0000-000000000000",
+  "parameter_set_name": "mistral-medium-2505_kv_detection",
+  "system_template_name": "llm_kv_detection_system_templates_v1",
+  "iteration_length": 3,
+  "language": "Original",
+  "user_context": {
+    "instruction_prompt": "string",
+    "image_data_url": "string"
+  },
+  "generation_content": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "{{ system_prompt }}{% if language %}\n\nOutput Language: {{ language }}{% endif %}"
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "{% if user_context.instruction_prompt %} {{ user_context.instruction_prompt }} {% endif %}"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "{% if user_context.image_data_url %}{{ user_context.image_data_url }}{% endif %}"
+            }
+          }
+        ]
+      }
+    ],
+    "results": [],
+    "metadata": {
+      "created_at": "datetime",
+      "total_tokens": 0,
+      "iterations_completed": 0,
+      "last_token_count": {
+        "completion_tokens": 0,
+        "prompt_tokens": 0,
+        "total_tokens": 0
+      },
+      "last_updated": "datetime"
+    }
+  }
+}

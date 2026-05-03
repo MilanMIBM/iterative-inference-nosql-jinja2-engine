@@ -1011,6 +1011,7 @@ def check_database_status(
                     "display_marker": "❌",
                 }
             )
+            print(e)
 
     return results
 
@@ -1185,6 +1186,78 @@ def upload_folder_to_database(
     print(f"Upload complete: {db_name}")
 
     return responses
+
+
+def upload_documents_from_mapping(
+    db_client,
+    file_templates: Dict[str, List[str]],
+    skip_corrupted: bool = True,
+    batch_size: int = 100,
+    provider: Optional[str] = None,
+) -> Dict[str, List]:
+    """
+    Upload documents to databases using a mapping of db names to file/folder paths.
+
+    Each key is a target database/collection name. Each value is a list of paths
+    that can be individual JSON files or directories. Directories are loaded with
+    ``load_json_documents``; individual files are read directly.
+
+    Args:
+        db_client: Initialized database client (CloudantV1, AstraDB Database,
+            or MongoDB Database).
+        file_templates: Mapping of ``{db_name: [path, ...]}``. Paths may be
+            individual ``.json`` files or directories containing ``.json`` files.
+        skip_corrupted: If True, skip files with '_corrupted' in their name
+            when loading from directories. Defaults to True.
+        batch_size: Number of documents per bulk operation. Defaults to 100.
+        provider: Optional explicit backend ("cloudant", "astradb", or "mongodb").
+
+    Returns:
+        Dict mapping each db name to the list of bulk-upload responses for that db.
+    """
+    all_responses: Dict[str, List] = {}
+
+    for db_name, paths in file_templates.items():
+        docs: List[Dict] = []
+
+        for raw_path in paths:
+            p = Path(raw_path)
+            if p.is_dir():
+                docs.extend(load_json_documents(str(p), skip_corrupted=skip_corrupted))
+            elif p.is_file():
+                if skip_corrupted and "_corrupted" in p.name:
+                    print(f"Skipping corrupted file: {p.name}")
+                    continue
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        doc = json.load(f)
+                    if isinstance(doc, list):
+                        docs.extend(doc)
+                    else:
+                        docs.append(doc)
+                    print(f"Loaded: {p.name}")
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing {p.name}: {e}")
+            else:
+                print(f"Path not found, skipping: {raw_path}")
+
+        if not docs:
+            print(f"No documents found for '{db_name}', skipping upload.")
+            all_responses[db_name] = []
+            continue
+
+        print(f"Uploading {len(docs)} document(s) to '{db_name}'...")
+        responses = bulk_upload_docs(
+            db_client=db_client,
+            db_name=db_name,
+            docs=docs,
+            batch_size=batch_size,
+            provider=provider,
+        )
+        print(f"Upload complete: {db_name}")
+        all_responses[db_name] = responses
+
+    return all_responses
 
 
 def upload_example_documents(

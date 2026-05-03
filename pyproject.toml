@@ -3,7 +3,7 @@ name = "iterative-inference-nosql-jinja2-engine"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12.13"
 dependencies = [
     "astrapy>=2.2.1",
     "certifi>=2026.2.25",
@@ -16,11 +16,14 @@ dependencies = [
     "jsonpath-python>=1.1.5",
     "marimo[mcp]>=0.21.1",
     "pandas>=2.3.3",
+    "pillow>=12.2.0",
+    "pillow-heif>=1.3.0",
     "pydantic-ai>=1.73.0",
     "pymongo>=4.16.0",
     "python-dotenv>=1.2.2",
     "requests>=2.33.0",
     "ruff>=0.15.8",
+    "tiktoken>=0.12.0",
     "ty>=0.0.26",
     "uv>=0.11.2",
     "wigglystuff>=0.3.1",

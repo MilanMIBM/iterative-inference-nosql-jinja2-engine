@@ -1,11 +1,11 @@
 {
-    "parameter_set_name": "mistral-medium-2505_single_generation",
+    "parameter_set_name": "mistral-medium-2505_kv_detection",
     "parameters": {
         "model_id": "mistralai/mistral-medium-2505",
         "params": {
             "frequency_penalty": 0,
             "logprobs": false,
-            "max_completion_tokens": 2048,
+            "max_completion_tokens": 4096,
             "n": 1,
             "presence_penalty": 0,
             "response_format": {
