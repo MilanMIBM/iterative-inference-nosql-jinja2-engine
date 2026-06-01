@@ -2,7 +2,7 @@
   "iteration_id": "00000000-0000-0000-0000-000000000000",
   "user_id": "00000000-0000-0000-0000-000000000000",
   "org_id": "00000000-0000-0000-0000-000000000000",
-  "parameter_set_name": "mistral-medium-2505_single_generation",
+  "parameter_set_name": "rhai-gpt-oss-120b_single_generation",
   "system_template_name": "main_system_templates_marimo_v2",
   "iteration_length": 1,
   "language": "English",
@@ -22,7 +22,7 @@
         "content": [
           {
             "type": "text",
-            "text": "{% if user_context %}{% for key, value in user_context.items() %}{% if value %}\n{{ key | replace('_', ' ') | title }}: {{ value }}{% endif %}{% endfor %}{% endif %}"
+            "text": "{% if user_context %}{% for key, value in user_context.items() %}{% if value %}{{ key | replace('_', ' ') | title }}: {{ value }}{% endif %}{% endfor %}{% endif %}"
           }
         ]
       }

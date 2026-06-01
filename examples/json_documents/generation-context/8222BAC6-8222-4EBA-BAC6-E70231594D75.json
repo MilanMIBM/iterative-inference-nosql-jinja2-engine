@@ -2,7 +2,7 @@
   "iteration_id": "8222BAC6-8222-4EBA-BAC6-E70231594D75",
   "user_id": "46990856-4766-4750-AECC-E6E8404FA7B8",
   "org_id": "FF330101-022E-408E-B000-198696DD8953",
-  "parameter_set_name": "mistral-medium-2505_single_generation",
+  "parameter_set_name": "wxai-mistral-medium-2505_single_generation",
   "system_template_name": "main_system_templates_marimo_v2",
   "iteration_length": 1,
   "language": "English",
@@ -22,7 +22,7 @@
         "content": [
           {
             "type": "text",
-            "text": "{% if user_context %}{% for key, value in user_context.items() %}{% if value %}\n{{ key | replace('_', ' ') | title }}: {{ value }}{% endif %}{% endfor %}{% endif %}"
+            "text": "{% if user_context %}{% for key, value in user_context.items() %}{% if value %}{{ key | replace('_', ' ') | title }}: {{ value }}{% endif %}{% endfor %}{% endif %}"
           }
         ]
       }

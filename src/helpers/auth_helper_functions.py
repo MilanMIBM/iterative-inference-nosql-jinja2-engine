@@ -147,7 +147,10 @@ def get_wxo_token(
     if auth_type == "ibm_iam":
         from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
 
-        authenticator = IAMAuthenticator(apikey=api_key, url=iam_url)
+        kwargs = {"apikey": api_key}
+        if iam_url:
+            kwargs["url"] = iam_url
+        authenticator = IAMAuthenticator(**kwargs)
         return authenticator.token_manager.get_token()
 
     elif auth_type == "mcsp":
@@ -216,7 +219,18 @@ def get_wxo_token(
 
 
 def build_wxo_call_meta(
-    instance_url: str, token: str, is_local: bool = False, api_version: str = "v1"
+    instance_url: str,
+    token: str = None,
+    is_local: bool = False,
+    api_version: str = "v1",
+    append_orchestrate: bool = True,
+    is_onprem: bool = False,
+    onprem_host: str = None,
+    onprem_port: str = None,
+    onprem_namespace: str = None,
+    onprem_instance_id: str = None,
+    zen_username: str = None,
+    zen_api_key: str = None,
 ) -> dict:
     """Build the base URL and Authorization header for WXO REST calls.
 
@@ -224,22 +238,78 @@ def build_wxo_call_meta(
     instances or "/v1" for local Developer Edition servers, and formats the
     bearer token header.
 
+    For on-premises deployments, the base URL is constructed as:
+        https://{onprem_host}:{port}/orchestrate/{namespace}/instances/{instanceid}/v1
+    and the Authorization header uses the Zen API key scheme.
+
     Args:
-        instance_url:  WXO service-instance URL (trailing slash stripped).
-        token:         Raw JWT bearer token from get_wxo_token().
-        is_local:      True when targeting a local Developer Edition server
-                        (localhost / 127.0.0.1 / etc.).
-        api_version:   Version of the API (currently v1 or v2) for different calls
+        instance_url:        WXO service-instance URL (trailing slash stripped).
+                            Not used when is_onprem=True.
+        token:               Raw JWT bearer token from get_wxo_token(). Not used
+                            when is_onprem=True (Zen API key is used instead).
+        is_local:            True when targeting a local Developer Edition server
+                            (localhost / 127.0.0.1 / etc.).
+        api_version:         Version of the API (currently v1 or v2) for different calls.
+        append_orchestrate:  When True (default), appends "/orchestrate" to the base URL
+                            for remote instances. Set to False for endpoints that do not
+                            use the /orchestrate path segment. Ignored when is_onprem=True.
+        is_onprem:           True when targeting an on-premises IBM Software Hub deployment.
+                            When True, onprem_host, onprem_namespace, onprem_instance_id,
+                            zen_username, and zen_api_key are required.
+        onprem_host:         Hostname or IP of the IBM Software Hub cluster
+                            (e.g. "api.example.com" or "cpd.example.com:31843").
+        onprem_port:         Optional port number. Can also be embedded in onprem_host.
+        onprem_namespace:    Namespace where the WXO instance is deployed.
+        onprem_instance_id:  Unique identifier of the WXO instance (the number after
+                            "orchestrate-" in the instance details URL).
+        zen_username:        IBM Software Hub username for Zen API key encoding.
+        zen_api_key:         IBM Software Hub API key for Zen API key encoding.
 
     Returns:
         dict with keys:
             "base_url" - versioned API base URL (str)
-            "headers"  - {"Authorization": "Bearer <token>"} (dict)
+            "headers"  - {"Authorization": "Bearer <token>"} or
+                        {"Authorization": "ZenApiKey <encoded>"} (dict)
+
+    Raises:
+        ValueError: When is_onprem=True and required on-prem arguments are missing,
+                    or when is_onprem=False and token is not provided.
     """
+    if is_onprem:
+        if not all(
+            [
+                onprem_host,
+                onprem_namespace,
+                onprem_instance_id,
+                zen_username,
+                zen_api_key,
+            ]
+        ):
+            raise ValueError(
+                "is_onprem=True requires: onprem_host, onprem_namespace, "
+                "onprem_instance_id, zen_username, and zen_api_key."
+            )
+        host = onprem_host.rstrip("/")
+        if onprem_port and ":" not in host:
+            host = f"{host}:{onprem_port}"
+        base_url = (
+            f"https://{host}/orchestrate/{onprem_namespace}"
+            f"/instances/{onprem_instance_id}/{api_version}"
+        )
+        auth_header = generate_zen_auth_header(zen_username, zen_api_key)
+        return {
+            "base_url": base_url,
+            "headers": {"Authorization": auth_header},
+        }
+
+    if token is None:
+        raise ValueError("token is required when is_onprem=False.")
+
     base = instance_url.rstrip("/")
-    base_url = (
-        f"{base}/{api_version}" if is_local else f"{base}/{api_version}/orchestrate"
-    )
+    if is_local or not append_orchestrate:
+        base_url = f"{base}/{api_version}"
+    else:
+        base_url = f"{base}/{api_version}/orchestrate"
     return {
         "base_url": base_url,
         "headers": {"Authorization": f"Bearer {token}"},

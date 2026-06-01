@@ -1,16 +1,14 @@
 {
-    "parameter_set_name": "mistral-medium-2505_single_generation",
+    "parameter_set_name": "rhai-gpt-oss-120b_single_generation",
+    "model_provider": "redhat-ai-inference",
     "parameters": {
-        "model_id": "mistralai/mistral-medium-2505",
+        "model_id": "gpt-oss-120b",
         "params": {
             "frequency_penalty": 0,
             "logprobs": false,
             "max_completion_tokens": 2048,
             "n": 1,
             "presence_penalty": 0,
-            "response_format": {
-                "type": "text"
-            },
             "stop": [
                 "</s>",
                 "| -----\n----- |",

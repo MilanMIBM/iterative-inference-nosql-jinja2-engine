@@ -8,6 +8,7 @@ requests
 marimo[mcp]
 wigglystuff
 ibm-watsonx-ai
+openai
 ibm-secrets-manager-sdk
 jsonpath-python
 python-dotenv
@@ -18,3 +19,4 @@ pymongo
 astrapy
 pillow
 pillow-heif
+pyperf

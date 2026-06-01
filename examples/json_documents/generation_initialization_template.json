@@ -22,7 +22,7 @@
                 "content": [
                     {
                         "type": "text",
-                        "text": "{% if user_context %}{% for key, value in user_context.items() %}{% if value %}\n{{ key | replace('_', ' ') | title }}: {{ value }}{% endif %}{% endfor %}{% endif %}"
+                        "text": "{% if user_context %}{% for key, value in user_context.items() %}{% if value %}{{ key | replace('_', ' ') | title }}: {{ value }}{% endif %}{% endfor %}{% endif %}"
                     }
                 ]
             }

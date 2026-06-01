@@ -1,16 +1,11 @@
 import marimo
 
-__generated_with = "0.23.4"
+__generated_with = "0.23.8"
 app = marimo.App(width="full")
 
 with app.setup:
     import marimo as mo
     import pandas as pd
-    from typing import Union
-    from wigglystuff import SortableList
-    import time
-    import uuid
-    import json
     import sys
     import os
 
@@ -31,17 +26,9 @@ def _():
         initialize_cloudant_database,
         initialize_astradb_database,
         initialize_mongodb_database,
+        initialize_hcd_database,
         upload_documents_from_mapping,
-        create_iteration_document,
-        update_iteration_document,
-        render_jinja2_templates,
-        upload_single_document,
-        ensure_database_exists,
         check_database_status,
-        parse_yaml_documents,
-        retrieve_documents,
-        bulk_upload_docs,
-        bulk_update_docs,
     )
 
     from src.utils.load_all_dotenv import (
@@ -50,12 +37,13 @@ def _():
 
     try:
         load_all_dotenv(os.path.join(parent_dir, "config"), verbose=True)
-    except:
+    except:  # noqa: E722
         load_all_dotenv("config", verbose=True)
     return (
         check_database_status,
         initialize_astradb_database,
         initialize_cloudant_database,
+        initialize_hcd_database,
         initialize_mongodb_database,
         upload_documents_from_mapping,
     )
@@ -63,12 +51,6 @@ def _():
 
 @app.cell
 def _():
-    # watsonx.ai
-    wx_api_key = os.getenv("WX_API_KEY", "")
-    wx_project_id = os.getenv("WX_PROJECT_ID", "")
-    wx_space_id = os.getenv("WX_SPACE_ID", "")
-    wx_url = os.getenv("WX_URL", "https://eu-de.ml.cloud.ibm.com")
-    default_chat_model = os.getenv("CHAT_MODEL", "mistralai/mistral-medium-2505")
     # AstraDB
     astradb_api_endpoint = os.getenv("ASTRA_DB_API_ENDPOINT", "")
     astradb_application_token = os.getenv("ASTRA_DB_APPLICATION_TOKEN", "")
@@ -81,12 +63,21 @@ def _():
     mongodb_username = os.getenv("MONGODB_USERNAME", "")
     mongodb_password = os.getenv("MONGODB_PASSWORD", "")
     mongodb_cert_path = os.getenv("MONGODB_CERT_PATH", "")
+    # HCD
+    hcd_api_endpoint = os.getenv("DATASTAX_HCD_ENDPOINT", "")
+    hcd_api_username = os.getenv("DATASTAX_HCD_API_USER", "")
+    hcd_api_password = os.getenv("DATASTAX_HCD_API_PASSWORD", "")
+    hcd_keyspace = os.getenv("DATASTAX_HCD_KEYSPACE", "default_keyspace")
     return (
         astradb_api_endpoint,
         astradb_application_token,
         astradb_keyspace,
         cloudant_apikey,
         cloudant_url,
+        hcd_api_endpoint,
+        hcd_api_password,
+        hcd_api_username,
+        hcd_keyspace,
         mongodb_cert_path,
         mongodb_endpoint,
         mongodb_password,
@@ -152,6 +143,24 @@ def _(
 
 @app.cell
 def _(
+    hcd_api_endpoint,
+    hcd_api_password,
+    hcd_api_username,
+    hcd_keyspace,
+    initialize_hcd_database,
+):
+    hcd = (
+        initialize_hcd_database(
+            hcd_api_endpoint, hcd_api_username, hcd_api_password, hcd_keyspace
+        )
+        if hcd_api_endpoint and hcd_api_username and hcd_api_password and hcd_keyspace
+        else None
+    )
+    return (hcd,)
+
+
+@app.cell
+def _(
     initialize_mongodb_database,
     mongodb_cert_path,
     mongodb_endpoint,
@@ -171,20 +180,22 @@ def _(
 @app.cell
 def _():
     db_provider = mo.ui.dropdown(
-        ["cloudant", "astradb", "mongodb"],
+        ["cloudant", "astradb", "hcd", "mongodb"],
         value="cloudant",
         allow_select_none=False,
         label="**Select Context Database Backend:**",
-        full_width=True,
+        full_width=False,
     )
     return (db_provider,)
 
 
 @app.cell
-def _(astradb, cloudant, db_provider, mongodb):
+def _(astradb, cloudant, db_provider, hcd, mongodb):
     active_db_provider = db_provider.value
     if active_db_provider == "astradb":
         active_db_client = astradb
+    elif active_db_provider == "hcd":
+        active_db_client = hcd
     elif active_db_provider == "mongodb":
         active_db_client = mongodb
     else:
@@ -193,19 +204,19 @@ def _(astradb, cloudant, db_provider, mongodb):
 
 
 @app.cell
-def _(instantiate_missing_dbs_button_status):
+def _(instantiate_missing_dbs_button_enabled):
     set_up_missing_dbs = mo.ui.run_button(
         label="**Instantiate Missing Databases**",
-        disabled=instantiate_missing_dbs_button_status,
+        disabled=instantiate_missing_dbs_button_enabled,
     )
     return (set_up_missing_dbs,)
 
 
 @app.cell
-def _(instantiate_missing_dbs_button_status):
+def _(baseline_doc_setup_enabled):
     set_up_baseline_documents = mo.ui.run_button(
         label="**Upload specified baseline documents**",
-        disabled=not instantiate_missing_dbs_button_status,
+        disabled=baseline_doc_setup_enabled,
     )
     return (set_up_baseline_documents,)
 
@@ -239,8 +250,19 @@ def _(
 
 @app.cell
 def _(status_validation):
-    instantiate_missing_dbs_button_status = bool(status_validation["status"].all())
-    return (instantiate_missing_dbs_button_status,)
+    instantiate_missing_dbs_button_status_dict = dict(status_validation["status"])
+    instantiate_missing_dbs_button_enabled = all(
+        instantiate_missing_dbs_button_status_dict.values()
+    )
+    return (instantiate_missing_dbs_button_enabled,)
+
+
+@app.cell
+def _(db_validation_results):
+    baseline_doc_setup_enabled = not all(
+        dict(db_validation_results.data["status"]).values()
+    )
+    return (baseline_doc_setup_enabled,)
 
 
 @app.cell
@@ -299,15 +321,18 @@ def _(active_db_provider, db_validation_df):
             show_download=False,
             selection=None,
             label=f"Selected provider: **{active_db_provider}**",
-            text_justify_columns={
-                col: "center" for col in db_validation_df.columns
-            },
+            text_justify_columns={col: "center" for col in db_validation_df.columns},
         )
         if db_validation_df is not None
         else mo.ui.table([{}])
     )
-    print(db_validation_results.data)
     return (db_validation_results,)
+
+
+@app.cell
+def _(db_validation_results):
+    print(db_validation_results.value)
+    return
 
 
 @app.cell
@@ -369,46 +394,6 @@ def _(db_messages, db_model_params, db_org_context, db_system_templates):
         db_system_templates: ["examples/json_documents/system-templates"],
     }
     return (baseline_file_templates,)
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    return
 
 
 if __name__ == "__main__":

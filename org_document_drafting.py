@@ -1,14 +1,12 @@
 import marimo
 
-__generated_with = "0.23.4"
+__generated_with = "0.23.8"
 app = marimo.App(width="full")
 
 with app.setup:
     import marimo as mo
-    from typing import Union
     from wigglystuff import SortableList
     import uuid
-    import json
     import os
 
 
@@ -23,29 +21,30 @@ def _():
     from src.helpers.nosql_database_helper_functions import (
         initialize_cloudant_database,
         initialize_astradb_database,
+        initialize_hcd_database,
         initialize_mongodb_database,
         upload_single_document,
     )
 
     from src.helpers.marimo_widget_helper_functions import (
-        columns_from_template,
-        marimo_create_data_editor_df,
+        records_to_dict,
     )
-
+    from src.helpers.marimo_sortablekv import sortable_kv
     from src.utils.load_all_dotenv import (
         load_all_dotenv,
     )
 
     try:
         load_all_dotenv(os.path.join(parent_dir, "config"), verbose=True)
-    except:
+    except:  # noqa: E722
         load_all_dotenv("config", verbose=True)
     return (
-        columns_from_template,
+        sortable_kv,
         initialize_astradb_database,
         initialize_cloudant_database,
+        initialize_hcd_database,
         initialize_mongodb_database,
-        marimo_create_data_editor_df,
+        records_to_dict,
         upload_single_document,
     )
 
@@ -61,12 +60,20 @@ def _():
     mongodb_username = os.getenv("MONGODB_USERNAME", "")
     mongodb_password = os.getenv("MONGODB_PASSWORD", "")
     mongodb_cert_path = os.getenv("MONGODB_CERT_PATH", "")
+    hcd_api_endpoint = os.getenv("DATASTAX_HCD_ENDPOINT", "")
+    hcd_api_username = os.getenv("DATASTAX_HCD_API_USER", "")
+    hcd_api_password = os.getenv("DATASTAX_HCD_API_PASSWORD", "")
+    hcd_keyspace = os.getenv("DATASTAX_HCD_KEYSPACE", "default_keyspace")
     return (
         astradb_api_endpoint,
         astradb_application_token,
         astradb_keyspace,
         cloudant_apikey,
         cloudant_url,
+        hcd_api_endpoint,
+        hcd_api_password,
+        hcd_api_username,
+        hcd_keyspace,
         mongodb_cert_path,
         mongodb_endpoint,
         mongodb_password,
@@ -87,7 +94,7 @@ def _(db_provider):
 @app.cell
 def _():
     db_provider = mo.ui.dropdown(
-        ["cloudant", "astradb", "mongodb"],
+        ["cloudant", "astradb", "hcd", "mongodb"],
         value="cloudant",
         allow_select_none=False,
         label="**Select Context Database Backend:**",
@@ -135,6 +142,24 @@ def _(
 
 @app.cell
 def _(
+    hcd_api_endpoint,
+    hcd_api_password,
+    hcd_api_username,
+    hcd_keyspace,
+    initialize_hcd_database,
+):
+    hcd = (
+        initialize_hcd_database(
+            hcd_api_endpoint, hcd_api_username, hcd_api_password, hcd_keyspace
+        )
+        if hcd_api_endpoint and hcd_api_username and hcd_api_password and hcd_keyspace
+        else None
+    )
+    return (hcd,)
+
+
+@app.cell
+def _(
     initialize_mongodb_database,
     mongodb_cert_path,
     mongodb_endpoint,
@@ -152,10 +177,12 @@ def _(
 
 
 @app.cell
-def _(astradb, cloudant, db_provider, mongodb):
+def _(astradb, cloudant, db_provider, hcd, mongodb):
     active_db_provider = db_provider.value
     if active_db_provider == "astradb":
         active_db_client = astradb
+    elif active_db_provider == "hcd":
+        active_db_client = hcd
     elif active_db_provider == "mongodb":
         active_db_client = mongodb
     else:
@@ -164,97 +191,102 @@ def _(astradb, cloudant, db_provider, mongodb):
 
 
 @app.cell
-def _(columns_from_template):
-    term_template = columns_from_template(
-        "examples/db_structure_templates/organization_context.json",
-        target_key="terminology_mapping",
-    )
+def _():
+    term_template = [
+        {"original": "<Term to Replace>", "replacement": "<Bias to Replacement Term>"},
+        {"original": "<Term to Replace>", "replacement": "<Bias to Replacement Term>"},
+        {"original": "<Term to Replace>", "replacement": "<Bias to Replacement Term>"},
+    ]
     print(term_template)
-
-    taxonomy_template = columns_from_template(
-        "examples/db_structure_templates/organization_context.json",
-        target_key="taxonomy",
-    )
+    taxonomy_template = [
+        {"term": "<Term>", "definition": "<Definition>"},
+        {"term": "<Term>", "definition": "<Definition>"},
+        {"term": "<Term>", "definition": "<Definition>"},
+    ]
     print(taxonomy_template)
 
-    # offerings_template = columns_from_template(
-    #     "examples/db_structure_templates/organization_context.json",
-    #     target_key="offerings",
-    #     variant_index=1,
-    # )
-    offerings_template = {
-        "<offering_name1>": "str",
-        "<offering_name2>": "str",
-        "<offering_name3>": "str",
-        "<offering_name4>": "str",
-        "<offering_name5>": "str",
-    }
-    print(offerings_template)
-    return offerings_template, taxonomy_template, term_template
+    offerings_kv_template = [
+        {"key": "<Offering Name>", "value": "<Offering Description>"},
+        {"key": "<Offering Name>", "value": "<Offering Description>"},
+        {"key": "<Offering Name>", "value": "<Offering Description>"},
+    ]
+    print(offerings_kv_template)
+    return offerings_kv_template, taxonomy_template, term_template
 
 
 @app.cell
-def _(marimo_create_data_editor_df, term_template):
-    term_editor_dataframe = marimo_create_data_editor_df(
-        num_rows=1, columns=term_template
+def _(sortable_kv, term_template):
+    term_editor = sortable_kv(
+        label="Terminology Remapping",
+        value=term_template,
+        key_placeholder=list(term_template[0].values())[0],
+        value_placeholder=list(term_template[0].values())[1],
+        addable=True,
+        removable=True,
+        editable=True,
+        movable=True,
     )
-    term_editor = mo.ui.data_editor(
-        data=term_editor_dataframe,
-        editable_columns="all",
-    )
+
     return (term_editor,)
 
 
 @app.cell
-def _(term_editor):
+def _(records_to_dict, term_editor):
     terminology_map = (
-        term_editor.value.replace("", None).dropna().to_dict(orient="records")
-        if term_editor.value is not None
+        [records_to_dict(term_editor.value.get("value"))]
+        if term_editor.value.get("value") is not None
         else []
     )
     return (terminology_map,)
 
 
 @app.cell
-def _(marimo_create_data_editor_df, taxonomy_template):
-    taxonomy_editor_dataframe = marimo_create_data_editor_df(
-        num_rows=1, columns=taxonomy_template
+def _(sortable_kv, taxonomy_template):
+    taxonomy_editor = sortable_kv(
+        label="Taxonomy",
+        value=taxonomy_template,
+        key_placeholder=list(taxonomy_template[0].values())[0],
+        value_placeholder=list(taxonomy_template[0].values())[1],
+        addable=True,
+        removable=True,
+        editable=True,
+        movable=True,
     )
-    taxonomy_editor = mo.ui.data_editor(
-        data=taxonomy_editor_dataframe,
-        editable_columns="all",
-    )
+
     return (taxonomy_editor,)
 
 
 @app.cell
-def _(taxonomy_editor):
+def _(records_to_dict, taxonomy_editor):
     taxonomy = (
-        taxonomy_editor.value.replace("", None).dropna().to_dict(orient="records")
-        if taxonomy_editor.value is not None
+        [records_to_dict(taxonomy_editor.value.get("value"))]
+        if taxonomy_editor.value.get("value") is not None
         else []
     )
     return (taxonomy,)
 
 
 @app.cell
-def _(marimo_create_data_editor_df, offerings_template):
-    offerings_editor_dataframe = marimo_create_data_editor_df(
-        num_rows=1, columns=offerings_template
+def _(sortable_kv, offerings_kv_template):
+    offerings_kv = sortable_kv(
+        label="Offerings",
+        value=offerings_kv_template,
+        key_placeholder=list(offerings_kv_template[0].values())[0],
+        value_placeholder=list(offerings_kv_template[0].values())[1],
+        addable=True,
+        removable=True,
+        editable=True,
+        movable=True,
     )
-    offerings_editor = mo.ui.data_editor(
-        label="**Offerings**",
-        data=offerings_editor_dataframe,
-        editable_columns="all",
-    )
-    return (offerings_editor,)
+
+    return (offerings_kv,)
 
 
 @app.cell
-def _(offerings_editor):
+def _(offerings_kv, records_to_dict):
     offerings = (
-        offerings_editor.value.replace("", None).dropna().to_dict(orient="records")
-        if offerings_editor.value is not None
+        [records_to_dict(offerings_kv.value.get("value"))]
+        if offerings_kv.value.get("value") is not None
         else []
     )
     return (offerings,)
@@ -301,7 +333,7 @@ def _():
         addable=True,
         editable=True,
         removable=True,
-        value=[],
+        value=[""],
     )
     return (location_operations,)
 
@@ -324,7 +356,7 @@ def _():
 def _(language, organization_name):
     mo.hstack(
         [organization_name, language],
-        widths=[0.3, 0.2],
+        widths=[0.3, 0.3],
         justify="space-around",
         align="start",
     )
@@ -333,29 +365,34 @@ def _(language, organization_name):
 
 @app.cell
 def _(organization_description):
-    organization_description.style({"width": "55%"}).center()
+    organization_description.style({"width": "100%"})
     return
 
 
 @app.cell
-def _(offerings_editor):
+def _():
+    return
+
+
+@app.cell
+def _(offerings_kv):
     offerings_stack = mo.vstack(
         [
             mo.md("##**Offerings Editor**"),
             mo.md(
                 "#### *(Add or remove columns as necessary, to add or remove offerings and their descriptions)*"
             ),
-            offerings_editor,
+            offerings_kv,
         ]
     )
-    offerings_stack.style({"width": "80%"}).center()
+    offerings_stack
     return
 
 
 @app.cell
 def _(term_editor):
     term_stack = mo.vstack([mo.md("###**Term Editor**").center(), term_editor])
-    term_stack.style({"width": "60%"}).center()
+    term_stack
     return
 
 
@@ -364,7 +401,7 @@ def _(taxonomy_editor):
     taxonomy_stack = mo.vstack(
         [mo.md("###**Taxonomy Editor**").center(), taxonomy_editor]
     )
-    taxonomy_stack.style({"width": "60%"}).center()
+    taxonomy_stack
     return
 
 
@@ -460,6 +497,7 @@ def _(
             provider_label = {
                 "astradb": "AstraDB",
                 "mongodb": "MongoDB",
+                "hcd": "Datastax HCD",
             }.get(active_db_provider, "Cloudant")
             status_printout = (
                 f"Uploaded document under **{org_id}** org_id to "

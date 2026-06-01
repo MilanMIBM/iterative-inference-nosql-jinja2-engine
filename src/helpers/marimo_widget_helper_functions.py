@@ -1,7 +1,11 @@
 import pandas as pd
-from typing import Union, Optional
+from typing import Union
 import marimo as mo
 import json
+
+
+def records_to_dict(records):
+    return {r["key"]: r["value"] for r in records}
 
 
 def _infer_dtype(value) -> str:

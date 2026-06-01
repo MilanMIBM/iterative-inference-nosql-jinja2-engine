@@ -2,7 +2,7 @@
   "iteration_id": "00000000-0000-0000-0000-000000000000",
   "user_id": "00000000-0000-0000-0000-000000000000",
   "org_id": "00000000-0000-0000-0000-000000000000",
-  "parameter_set_name": "mistral-medium-2505_kv_detection",
+  "parameter_set_name": "wxai-mistral-medium-2505_kv_detection",
   "system_template_name": "llm_kv_detection_system_templates_v1",
   "iteration_length": 3,
   "language": "Original",
@@ -21,7 +21,7 @@
         "content": [
           {
             "type": "text",
-            "text": "{% if user_context.instruction_prompt %} {{ user_context.instruction_prompt }} {% endif %}"
+            "text": "{% if user_context.instruction_prompt %}{{ user_context.instruction_prompt }}{% endif %}"
           },
           {
             "type": "image_url",

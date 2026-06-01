@@ -1,5 +1,6 @@
 {
     "parameter_set_name": "string",
+    "model_provider": "string",
     "parameters": {
         "model_id": "string",
         "params": {

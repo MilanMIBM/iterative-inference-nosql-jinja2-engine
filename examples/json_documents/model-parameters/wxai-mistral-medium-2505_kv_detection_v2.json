@@ -1,5 +1,6 @@
 {
-    "parameter_set_name": "mistral-medium-2505_kv_detection",
+    "parameter_set_name": "wxai-mistral-medium-2505_kv_detection_v2",
+    "model_provider": "watsonx-ai",
     "parameters": {
         "model_id": "mistralai/mistral-medium-2505",
         "params": {

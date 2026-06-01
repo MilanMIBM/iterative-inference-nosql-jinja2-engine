@@ -9,6 +9,8 @@ from pathlib import Path
 import certifi
 import marimo as mo
 from astrapy import DataAPIClient
+from astrapy.authentication import UsernamePasswordTokenProvider
+from astrapy.constants import Environment as DataStaxEnvironment
 from pymongo import MongoClient
 from pymongo.database import Database as MongoDatabase
 from jinja2 import Environment, UndefinedError
@@ -26,7 +28,7 @@ import re
 
 
 def _detect_backend(db_client, provider: Optional[str] = None) -> str:
-    """Return 'cloudant', 'astradb', or 'mongodb' based on client type or explicit provider."""
+    """Return 'cloudant', 'astradb', 'hcd' or 'mongodb' based on client type or explicit provider."""
     if provider:
         return provider.strip().lower()
     if isinstance(db_client, CloudantV1):
@@ -34,6 +36,11 @@ def _detect_backend(db_client, provider: Optional[str] = None) -> str:
     if isinstance(db_client, MongoDatabase):
         return "mongodb"
     return "astradb"
+
+
+def _is_astra_compatible(backend: str) -> bool:
+    """Return True for backends that share the astrapy code path (astradb, hcd)."""
+    return backend in ("astradb", "hcd")
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +191,7 @@ def ensure_database_exists(
                 print(f"Failed to create database {db_name}: {str(e)}")
                 raise
 
-    if backend == "astradb":
+    if _is_astra_compatible(backend):
         try:
             existing = set(db_client.list_collection_names())
             if db_name not in existing:
@@ -193,7 +200,7 @@ def ensure_database_exists(
                 db_client.create_collection(db_name)
             return True
         except Exception as e:
-            print(f"Failed to ensure AstraDB collection {db_name}: {str(e)}")
+            print(f"Failed to ensure {backend} collection {db_name}: {str(e)}")
             raise
 
     if backend == "mongodb":
@@ -247,7 +254,7 @@ def retrieve_documents(
         except Exception:
             print(f"{db_name} does not exist")
             return []
-    elif backend == "astradb":
+    elif _is_astra_compatible(backend):
         if db_client is None:
             print(f"{db_name} does not exist")
             return []
@@ -271,7 +278,7 @@ def retrieve_documents(
             return []
 
     try:
-        if backend == "astradb":
+        if _is_astra_compatible(backend):
             if db_client is None:
                 return [] if docs_only else {"docs": []}
 
@@ -400,15 +407,17 @@ def bulk_update_docs(
     ensure_database_exists(db_client, db_name, provider=backend)
 
     try:
-        if backend == "astradb":
+        if _is_astra_compatible(backend):
             for i, doc in enumerate(docs):
                 if "_id" not in doc:
                     raise ValueError(
                         f"Document at index {i} is missing '_id'. "
-                        "This is required to update an existing AstraDB document."
+                        f"This is required to update an existing {backend} document."
                     )
             if db_client is None:
-                raise ValueError("AstraDB client is None. Cannot perform bulk update.")
+                raise ValueError(
+                    f"{backend} client is None. Cannot perform bulk update."
+                )
 
             collection_name = _resolve_collection_name(db_client, db_name)
             collection = db_client.get_collection(collection_name)
@@ -419,7 +428,7 @@ def bulk_update_docs(
             responses: list = []
             for batch in mo.status.progress_bar(
                 batches,
-                title="Updating AstraDB documents",
+                title=f"Updating {backend} documents",
                 subtitle=f"Updating {len(docs)} document(s) in '{collection_name}'",
                 remove_on_exit=True,
             ):
@@ -585,11 +594,11 @@ def bulk_upload_docs(
         for i in range(0, len(results_list), batch_size)
     ]
 
-    if backend == "astradb":
+    if _is_astra_compatible(backend):
         responses: list = []
         for batch in mo.status.progress_bar(
             batches,
-            title="Uploading to AstraDB",
+            title=f"Uploading to {backend}",
             subtitle=f"Uploading {len(results_list)} documents",
             remove_on_exit=True,
         ):
@@ -672,7 +681,7 @@ def upload_single_document(
             date_suffix = datetime.now().strftime("%d%m%Y")
             doc["_id"] = f"{str(uuid.uuid4())}_{date_suffix}"
 
-    if backend == "astradb":
+    if _is_astra_compatible(backend):
         collection_name = _resolve_collection_name(db_client, db_name)
         collection = db_client.get_collection(collection_name)
         result = collection.insert_one(doc)
@@ -1032,6 +1041,28 @@ def initialize_astradb_database(
 
     client = DataAPIClient(token=token)
     return client.get_database(api_endpoint=api_endpoint, keyspace=keyspace or None)
+
+
+def initialize_hcd_database(
+    api_endpoint: str,
+    username: str,
+    password: str,
+    keyspace: Optional[str] = None,
+):
+    """Initialize a DataStax HCD Database client; return None when required inputs are missing."""
+    if not api_endpoint or not username or not password:
+        return None
+
+    token = UsernamePasswordTokenProvider(username, password)
+    client = DataAPIClient(environment=DataStaxEnvironment.HCD)
+    db = client.get_database(
+        api_endpoint, token=token, keyspace=keyspace or "default_keyspace"
+    )
+    db.get_database_admin().create_keyspace(
+        keyspace or "default_keyspace",
+        update_db_keyspace=True,
+    )
+    return db
 
 
 def initialize_mongodb_database(
@@ -1406,7 +1437,7 @@ def create_iteration_document(
     ensure_database_exists(db_client, db_name, provider=backend)
 
     try:
-        if backend == "astradb":
+        if _is_astra_compatible(backend):
             collection = db_client.get_collection(db_name)
             collection.insert_one(iteration_doc)
         elif backend == "mongodb":
@@ -1499,7 +1530,7 @@ def update_iteration_document(
         metadata["iterations_completed"] = metadata.get("iterations_completed", 0) + 1
         metadata["last_updated"] = datetime.now().isoformat()
 
-        if backend == "astradb":
+        if _is_astra_compatible(backend):
             collection = db_client.get_collection(db_name)
             doc_id = iteration_doc["_id"]
             update_data = {k: v for k, v in iteration_doc.items() if k != "_id"}

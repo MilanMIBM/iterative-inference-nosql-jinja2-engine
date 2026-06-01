@@ -1,0 +1,25 @@
+{
+    "parameter_set_name": "wxai-mistral-medium-2505_kv_detection",
+    "model_provider": "watsonx-ai",
+    "parameters": {
+        "model_id": "mistralai/mistral-medium-2505",
+        "params": {
+            "frequency_penalty": 0,
+            "logprobs": false,
+            "max_completion_tokens": 4096,
+            "n": 1,
+            "presence_penalty": 0,
+            "response_format": {
+                "type": "text"
+            },
+            "stop": [
+                "</s>",
+                "| -----\n----- |",
+                "| -----\n\n----- |",
+                "| ----- \n\n ----- |"
+            ],
+            "temperature": 0.7,
+            "top_p": 1
+        }
+    }
+}

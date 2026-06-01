@@ -103,3 +103,6 @@ snippet.py
 examples/usecase_examples/visionllm_keyvalue_detection/visionllm_keyvalue_detection_mnb.py
 examples/usecase_examples/visionllm_keyvalue_detection/file_examples/partner_lunch_bill.jpg
 examples/usecase_examples/visionllm_keyvalue_detection/file_examples/hotel_bill_example.jpg
+iterative_generation_demonstration_v2.5.py
+redhat-ai-inference.py
+datastax_hcd_test.py
