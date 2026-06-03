@@ -1,0 +1,23 @@
+{
+    "application/json": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "return_packages": {
+                "type": "boolean",
+                "description": "If true, return all installed packages and their versions."
+            },
+            "install_packages": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "List of packages to pip install (e.g. [\"transformers\", \"numpy>=2.0\"])."
+            },
+            "upgrade": {
+                "type": "boolean",
+                "description": "If true, adds --upgrade flag to pip install. Defaults to false."
+            }
+        }
+    }
+}

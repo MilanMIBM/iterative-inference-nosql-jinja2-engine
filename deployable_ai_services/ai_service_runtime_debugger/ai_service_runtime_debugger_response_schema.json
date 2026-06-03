@@ -1,0 +1,36 @@
+{
+    "application/json": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "installed_packages": {
+                "type": "object",
+                "description": "Dictionary of installed package names to versions. Present when return_packages=true."
+            },
+            "install_command": {
+                "type": "string",
+                "description": "The pip install command that was executed. Present when install_packages is provided."
+            },
+            "install_result": {
+                "type": "string",
+                "description": "stdout/stderr output from the pip install command."
+            },
+            "install_success": {
+                "type": "boolean",
+                "description": "True if pip install completed without errors, false otherwise."
+            },
+            "message": {
+                "type": "string",
+                "description": "Informational message when no action was requested."
+            },
+            "status": {
+                "type": "string",
+                "description": "Status of the request. Present on error responses ('error')."
+            },
+            "error": {
+                "type": "string",
+                "description": "Error message. Present only when status is 'error'."
+            }
+        }
+    }
+}

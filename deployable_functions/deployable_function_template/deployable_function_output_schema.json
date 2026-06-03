@@ -1,0 +1,24 @@
+[
+    {
+        "id": "1",
+        "type": "struct",
+        "fields": [
+            {
+                "name": "<output variable name example>",
+                "type": "map",
+                "nullable": false,
+                "metadata": {
+                    "description": "Output from the function."
+                }
+            },
+            {
+                "name": "<optional output variable name example>",
+                "type": "array",
+                "nullable": true,
+                "metadata": {
+                    "description": "Optional outpu variable from the function."
+                }
+            }
+        ]
+    }
+]

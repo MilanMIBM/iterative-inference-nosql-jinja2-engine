@@ -1,0 +1,32 @@
+[
+    {
+        "id": "1",
+        "type": "struct",
+        "fields": [
+            {
+                "name": "return_packages",
+                "type": "boolean",
+                "nullable": true,
+                "metadata": {
+                    "description": "If true, return a dictionary of all installed packages and their versions. Defaults to false."
+                }
+            },
+            {
+                "name": "install_packages",
+                "type": "array",
+                "nullable": true,
+                "metadata": {
+                    "description": "Optional list of packages to pip install, with or without version specifiers (e.g. [\"transformers\", \"numpy>=2.0\"])."
+                }
+            },
+            {
+                "name": "upgrade",
+                "type": "boolean",
+                "nullable": true,
+                "metadata": {
+                    "description": "If true, add --upgrade flag to the pip install command. Defaults to false."
+                }
+            }
+        ]
+    }
+]

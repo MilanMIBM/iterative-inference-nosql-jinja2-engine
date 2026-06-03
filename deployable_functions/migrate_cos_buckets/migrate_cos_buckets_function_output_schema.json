@@ -1,0 +1,32 @@
+[
+    {
+        "id": "1",
+        "type": "struct",
+        "fields": [
+            {
+                "name": "status",
+                "type": "string",
+                "nullable": false,
+                "metadata": {
+                    "description": "Status of the operation (success or error)"
+                }
+            },
+            {
+                "name": "data",
+                "type": "object",
+                "nullable": true,
+                "metadata": {
+                    "description": "Response data containing transfer details"
+                }
+            },
+            {
+                "name": "message",
+                "type": "string",
+                "nullable": true,
+                "metadata": {
+                    "description": "Error message if status is error"
+                }
+            }
+        ]
+    }
+]

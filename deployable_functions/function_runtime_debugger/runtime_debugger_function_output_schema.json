@@ -1,0 +1,40 @@
+[
+    {
+        "id": "1",
+        "type": "struct",
+        "fields": [
+            {
+                "name": "installed_packages",
+                "type": "map",
+                "nullable": true,
+                "metadata": {
+                    "description": "Dictionary of installed package names to their versions. Only present when return_packages=true."
+                }
+            },
+            {
+                "name": "install_command",
+                "type": "string",
+                "nullable": true,
+                "metadata": {
+                    "description": "The pip install command that was executed. Only present when install_packages was provided."
+                }
+            },
+            {
+                "name": "install_result",
+                "type": "string",
+                "nullable": true,
+                "metadata": {
+                    "description": "Stdout/stderr output from the pip install command."
+                }
+            },
+            {
+                "name": "install_success",
+                "type": "boolean",
+                "nullable": true,
+                "metadata": {
+                    "description": "Whether the pip install command succeeded. Only present when install_packages was provided."
+                }
+            }
+        ]
+    }
+]

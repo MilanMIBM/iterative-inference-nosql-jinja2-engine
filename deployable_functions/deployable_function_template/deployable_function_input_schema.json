@@ -1,0 +1,32 @@
+[
+    {
+        "id": "1",
+        "type": "struct",
+        "fields": [
+            {
+                "name": "<required input variable example>",
+                "type": "map",
+                "nullable": false,
+                "metadata": {
+                    "description": "Variable Description"
+                }
+            },
+            {
+                "name": "<optional input variable example>",
+                "type": "string",
+                "nullable": true,
+                "metadata": {
+                    "description": "Variable Description"
+                }
+            },
+            {
+                "name": "env_overrides",
+                "type": "map",
+                "nullable": true,
+                "metadata": {
+                    "description": "Optional dictionary of environment variable overrides to apply at runtime."
+                }
+            }
+        ]
+    }
+]

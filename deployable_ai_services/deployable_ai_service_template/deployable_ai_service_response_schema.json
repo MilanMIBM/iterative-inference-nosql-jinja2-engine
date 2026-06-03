@@ -1,0 +1,24 @@
+{
+    "application/json": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "string",
+                "description": "Primary output from the AI service."
+            },
+            "<optional_output_field>": {
+                "type": "object",
+                "description": "Optional additional output field description."
+            },
+            "status": {
+                "type": "string",
+                "description": "Status of the request. Present on error responses ('error')."
+            },
+            "error": {
+                "type": "string",
+                "description": "Error message. Present only when status is 'error'."
+            }
+        }
+    }
+}

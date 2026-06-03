@@ -1,0 +1,21 @@
+{
+    "application/json": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "<required_input_parameter>": {
+                "type": "string",
+                "description": "Required input parameter description."
+            },
+            "<optional_input_parameter>": {
+                "type": "object",
+                "description": "Optional input parameter description."
+            },
+            "env_overrides": {
+                "type": "object",
+                "description": "Optional dictionary of environment variable overrides to apply at runtime."
+            }
+        },
+        "required": ["<required_input_parameter>"]
+    }
+}

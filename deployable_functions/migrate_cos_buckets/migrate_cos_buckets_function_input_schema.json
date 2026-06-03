@@ -1,0 +1,48 @@
+[
+    {
+        "id": "1",
+        "type": "struct",
+        "fields": [
+            {
+                "name": "source_cos_config",
+                "type": "object",
+                "nullable": false,
+                "metadata": {
+                    "description": "Source Cloud Object Storage configuration. Must include: bucket_name (name of the source bucket), aws_access_key (HMAC access key ID), aws_secret_access_key (HMAC secret access key), endpoint_url (S3-compatible endpoint, e.g. https://s3.eu-de.cloud-object-storage.appdomain.cloud)"
+                }
+            },
+            {
+                "name": "target_cos_config",
+                "type": "object",
+                "nullable": false,
+                "metadata": {
+                    "description": "Target Cloud Object Storage configuration. Must include: bucket_name (name of the target bucket), aws_access_key (HMAC access key ID), aws_secret_access_key (HMAC secret access key), endpoint_url (S3-compatible endpoint, e.g. https://s3.eu-de.cloud-object-storage.appdomain.cloud)"
+                }
+            },
+            {
+                "name": "source_objects",
+                "type": "array",
+                "nullable": true,
+                "metadata": {
+                    "description": "Keys of objects in the source COS bucket to transfer. If empty or omitted, all objects in the source bucket (optionally filtered by source_prefix) will be transferred."
+                }
+            },
+            {
+                "name": "source_prefix",
+                "type": "string",
+                "nullable": true,
+                "metadata": {
+                    "description": "Optional prefix to prepend to source object keys"
+                }
+            },
+            {
+                "name": "target_prefix",
+                "type": "string",
+                "nullable": true,
+                "metadata": {
+                    "description": "Optional prefix to prepend to target object keys"
+                }
+            }
+        ]
+    }
+]
