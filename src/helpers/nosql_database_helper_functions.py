@@ -767,11 +767,101 @@ def get_document_schema(
 # ---------------------------------------------------------------------------
 
 
-def parse_yaml_documents(raw_yaml, safe_load=True):
-    raw_documents = re.findall(
-        r"-{3,}\s*\n(.*?)\s*(?=-{3,})", raw_yaml, flags=re.DOTALL
-    )
-    cleaned = [doc.strip() for doc in raw_documents if doc.strip()]
+def _extract_delimited_blocks(raw_yaml: str, delimiter: str) -> List[str]:
+    """Extract the text of YAML blocks fenced by a delimiter line.
+
+    Handles both separator style (``<yaml>\\n---\\n<yaml>``) and fenced style
+    (``---\\n<yaml>\\n---``). A delimiter line is a line consisting solely of the
+    *delimiter* pattern (optionally surrounded by whitespace). The text between
+    consecutive delimiter lines - and any leading text before the first
+    delimiter / trailing text after the last - is returned as a candidate block.
+
+    Args:
+        raw_yaml: The full source string.
+        delimiter: A regex matching the fence token on its own line (e.g.
+            ``r"-{3,}"`` for three-or-more dashes).
+
+    Returns:
+        A list of stripped, non-empty block strings. Returns an empty list when
+        no delimiter line is present.
+    """
+    # A delimiter line: start-of-line, optional ws, the token, optional ws, EOL.
+    fence_re = re.compile(rf"(?m)^[ \t]*{delimiter}[ \t]*$")
+    if not fence_re.search(raw_yaml):
+        return []
+
+    # Split on delimiter lines; the pieces between them are the candidate blocks.
+    blocks = fence_re.split(raw_yaml)
+    return [block.strip() for block in blocks if block.strip()]
+
+
+def parse_yaml_documents(
+    raw_yaml,
+    safe_load: bool = True,
+    extract_delimited: bool = True,
+    delimiter: str = r"-{3,}",
+    fallback_to_full: bool = True,
+):
+    """Parse one or more YAML documents out of a raw string.
+
+    By default the string is treated as containing YAML blocks fenced by a
+    delimiter line (3-or-more dashes), e.g.::
+
+        ---
+        type: slider
+        ---
+
+    or separated by them (``doc1\\n---\\ndoc2``). Each block is parsed
+    independently and the dict results are collected.
+
+    Args:
+        raw_yaml: The source string to parse. Non-string input returns ``None``.
+        safe_load: If ``True`` (default), parse each block with
+            ``yaml.safe_load`` (with a key-quoting repair retry) and keep only
+            dict results. If ``False``, return the raw block strings instead of
+            parsed objects.
+        extract_delimited: If ``True`` (default), extract blocks fenced/separated
+            by *delimiter* before parsing. If ``False``, the whole string is
+            treated as a single YAML document.
+        delimiter: Regex matching the fence token on its own line. Defaults to
+            ``r"-{3,}"`` (three or more dashes). Adjust to use a different fence,
+            e.g. ``r"={3,}"`` or ``r"~~~"``.
+        fallback_to_full: If ``True`` (default) and *extract_delimited* is on but
+            no delimiter line is found, fall back to parsing the entire string as
+            one document instead of returning nothing. Set ``False`` to require
+            delimiters strictly (returns ``None`` when none are present).
+
+    Returns:
+        - A single dict when exactly one document parses.
+        - A list of documents when several parse.
+        - ``None`` when nothing parses.
+        (When ``safe_load=False`` the same shape applies to raw block strings.)
+    """
+    if not isinstance(raw_yaml, str) or not raw_yaml.strip():
+        return None
+
+    if extract_delimited:
+        cleaned = _extract_delimited_blocks(raw_yaml, delimiter)
+        if not cleaned:
+            # No fence present: optionally treat the whole string as one doc.
+            cleaned = [raw_yaml.strip()] if fallback_to_full else []
+    else:
+        # Delimiter extraction disabled: hand the whole string to PyYAML, which
+        # natively understands the standard "---" document separator via
+        # safe_load_all. This keeps multi-doc streams working without our own
+        # fence splitting.
+        if safe_load:
+            try:
+                docs = [d for d in yaml.safe_load_all(raw_yaml) if isinstance(d, dict)]
+                return docs[0] if len(docs) == 1 else docs if docs else None
+            except yaml.YAMLError:
+                # Fall through to the per-block repair path below.
+                cleaned = [raw_yaml.strip()]
+        else:
+            cleaned = [raw_yaml.strip()]
+
+    if not cleaned:
+        return None
 
     if safe_load:
         parsed = []
@@ -972,11 +1062,28 @@ def render_jinja2_templates(
 # ---------------------------------------------------------------------------
 
 
+def _count_documents(db_client, db_name: str, backend: str) -> int:
+    """Return the number of documents in a database/collection for the given backend."""
+    if _is_astra_compatible(backend):
+        collection_name = _resolve_collection_name(db_client, db_name)
+        collection = db_client.get_collection(collection_name)
+        return collection.count_documents({}, upper_bound=1_000_000_000)
+
+    if backend == "mongodb":
+        collection = db_client[db_name]
+        return collection.count_documents({})
+
+    # --- Cloudant path ---
+    info = db_client.get_database_information(db=db_name).get_result()
+    return info.get("doc_count", 0)
+
+
 def check_database_status(
     db_names: Union[str, List[str]],
     db_client,
     db_provider: Optional[str] = None,
     create: bool = False,
+    return_doc_count: bool = True,
 ) -> List[dict]:
     """
     Check if databases exist and return status with emojis.
@@ -989,15 +1096,20 @@ def check_database_status(
             When omitted the backend is detected from the client type.
         create: If True, create the database/collection when it does not exist.
             Defaults to False (check only).
+        return_doc_count: If True, include a ``documents`` field with the number
+            of documents in each existing database/collection. Defaults to False.
 
     Returns:
         A list of dicts, one per database name, each containing:
             - db_name: The database/collection name.
             - status: True if exists, False otherwise.
             - display_marker: ✅ if exists, ❌ otherwise.
+            - documents: Number of documents (only when return_doc_count=True).
     """
     if isinstance(db_names, str):
         db_names = [db_names]
+
+    backend = _detect_backend(db_client, db_provider)
 
     results = []
     for db_name in db_names:
@@ -1005,21 +1117,25 @@ def check_database_status(
             exists = ensure_database_exists(
                 db_client, db_name, db_provider, create=create
             )
-            results.append(
-                {
-                    "db_name": db_name,
-                    "status": exists,
-                    "display_marker": "✅" if exists else "❌",
-                }
-            )
+            result = {
+                "db_name": db_name,
+                "status": exists,
+                "display_marker": "✅" if exists else "❌",
+            }
+            if return_doc_count:
+                result["documents"] = (
+                    _count_documents(db_client, db_name, backend) if exists else 0
+                )
+            results.append(result)
         except Exception as e:
-            results.append(
-                {
-                    "db_name": db_name,
-                    "status": False,
-                    "display_marker": "❌",
-                }
-            )
+            result = {
+                "db_name": db_name,
+                "status": False,
+                "display_marker": "❌",
+            }
+            if return_doc_count:
+                result["documents"] = 0
+            results.append(result)
             print(e)
 
     return results
@@ -1289,6 +1405,112 @@ def upload_documents_from_mapping(
         all_responses[db_name] = responses
 
     return all_responses
+
+
+def purge_databases(
+    db_client,
+    db_names: Union[str, List[str]],
+    reupload: bool = False,
+    file_templates: Optional[Dict[str, List[str]]] = None,
+    skip_corrupted: bool = True,
+    batch_size: int = 100,
+    provider: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Delete all documents in the provided databases/collections (by name).
+
+    Optionally re-upload documents from a directory/file mapping afterwards,
+    matching how documents are uploaded initially via
+    ``upload_documents_from_mapping`` (used in ``prepare_databases.py`` and
+    ``iterative_generation_demonstration_v3.3.py``).
+
+    The databases/collections themselves are left in place; only their
+    documents are removed.
+
+    Args:
+        db_client: Initialized database client (CloudantV1, AstraDB Database,
+            or MongoDB Database).
+        db_names: A single database/collection name or a list of names to purge.
+        reupload: If True, re-upload documents after purging using
+            ``file_templates``. Defaults to False.
+        file_templates: Mapping of ``{db_name: [path, ...]}`` used when
+            ``reupload`` is True. Paths may be individual ``.json`` files or
+            directories containing ``.json`` files. Required when reupload=True.
+        skip_corrupted: If True, skip files with '_corrupted' in their name
+            when re-uploading from directories. Defaults to True.
+        batch_size: Number of documents per bulk operation. Defaults to 100.
+        provider: Optional explicit backend ("cloudant", "astradb", "hcd",
+            or "mongodb"). When omitted the backend is detected from the client.
+
+    Returns:
+        Dict with:
+            - "purged": mapping of db_name -> number of documents deleted.
+            - "reuploaded": mapping of db_name -> upload responses (only present
+              when reupload is True).
+    """
+    backend = _detect_backend(db_client, provider)
+
+    if isinstance(db_names, str):
+        db_names = [db_names]
+
+    purged: Dict[str, int] = {}
+
+    for db_name in db_names:
+        try:
+            if _is_astra_compatible(backend):
+                collection_name = _resolve_collection_name(db_client, db_name)
+                collection = db_client.get_collection(collection_name)
+                result = collection.delete_many({})
+                purged[db_name] = getattr(result, "deleted_count", 0) or 0
+
+            elif backend == "mongodb":
+                collection = db_client[db_name]
+                result = collection.delete_many({})
+                purged[db_name] = result.deleted_count
+
+            else:  # cloudant
+                docs = retrieve_documents(
+                    db_client=db_client,
+                    db_name=db_name,
+                    selectors={"_id": {"$gt": None}},
+                    fields=["_id", "_rev"],
+                    limit=100000,
+                    docs_only=True,
+                    provider=backend,
+                )
+                deleted = 0
+                if docs:
+                    delete_docs = [
+                        {"_id": d["_id"], "_rev": d["_rev"], "_deleted": True}
+                        for d in docs
+                        if "_id" in d and "_rev" in d
+                    ]
+                    if delete_docs:
+                        db_client.post_bulk_docs(
+                            db=db_name, bulk_docs={"docs": delete_docs}
+                        ).get_result()
+                        deleted = len(delete_docs)
+                purged[db_name] = deleted
+
+            print(f"Purged {purged[db_name]} document(s) from '{db_name}'")
+        except Exception as e:
+            print(f"Failed to purge '{db_name}': {e}")
+            purged[db_name] = 0
+
+    summary: Dict[str, Any] = {"purged": purged}
+
+    if reupload:
+        if not file_templates:
+            raise ValueError("file_templates is required when reupload=True.")
+        summary["reuploaded"] = upload_documents_from_mapping(
+            db_client=db_client,
+            file_templates=file_templates,
+            skip_corrupted=skip_corrupted,
+            batch_size=batch_size,
+            provider=backend,
+        )
+
+    return summary
 
 
 def upload_example_documents(
