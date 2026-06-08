@@ -1,0 +1,24 @@
+[
+    {
+        "id": "1",
+        "type": "struct",
+        "fields": [
+            {
+                "name": "widget_result",
+                "type": "map",
+                "nullable": false,
+                "metadata": {
+                    "description": "Validated widget parameters dictionary containing the filtered and type-coerced parameters accepted by the target marimo widget class."
+                }
+            },
+            {
+                "name": "debug_logs",
+                "type": "array",
+                "nullable": true,
+                "metadata": {
+                    "description": "List of debug log messages from each processing step. Only present when 'verbose' is set to true in the input."
+                }
+            }
+        ]
+    }
+]

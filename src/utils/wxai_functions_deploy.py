@@ -19,14 +19,14 @@ Usage as module (CPD):
         --cpd
 
 Usage as callable script:
-    python src/utils/sw_compatible/wxai_functions_deploy.py \
+    python src/utils/wxai_functions_deploy.py \
         --artifact_id <artifact_id> \
         --deployment_name my_deployment \
         --wx_api_key <key> \
         --wx_space_id <space_id>
 
 Usage as callable script (CPD):
-    python src/utils/sw_compatible/wxai_functions_deploy.py \
+    python src/utils/wxai_functions_deploy.py \
         --artifact_id <artifact_id> \
         --deployment_name my_deployment \
         --wx_api_key <key> \

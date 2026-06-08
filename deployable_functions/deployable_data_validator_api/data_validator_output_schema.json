@@ -1,0 +1,24 @@
+[
+    {
+        "id": "1",
+        "type": "struct",
+        "fields": [
+            {
+                "name": "validation_result",
+                "type": "map",
+                "nullable": false,
+                "metadata": {
+                    "description": "The validated and normalized data. Contains only the properties allowed by the resolved schema (when additionalProperties is false and strip_unknown is true), with defaults applied and type/enum/const/required/bounds constraints checked."
+                }
+            },
+            {
+                "name": "debug_logs",
+                "type": "array",
+                "nullable": true,
+                "metadata": {
+                    "description": "List of debug log messages from each processing step. Only present when 'verbose' is set to true in the input."
+                }
+            }
+        ]
+    }
+]

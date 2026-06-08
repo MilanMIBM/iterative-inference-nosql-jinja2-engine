@@ -1,0 +1,56 @@
+[
+    {
+        "id": "1",
+        "type": "struct",
+        "fields": [
+            {
+                "name": "data",
+                "type": "map",
+                "nullable": false,
+                "metadata": {
+                    "description": "The data payload to validate (typically a JSON object). Validated against the supplied JSON Schema; defaults are applied and, when strip_unknown is true, undeclared properties are removed."
+                }
+            },
+            {
+                "name": "schema",
+                "type": "string",
+                "nullable": true,
+                "metadata": {
+                    "description": "JSON Schema to validate against. May be a parsed object, a JSON string, a YAML string, or a JavaScript/JSON5-style object literal (unquoted keys, single quotes, trailing commas, // and /* */ comments). If not provided, a permissive object schema is used."
+                }
+            },
+            {
+                "name": "key_mapping",
+                "type": "map",
+                "nullable": true,
+                "metadata": {
+                    "description": "Optional mapping applied to top-level keys of the data before validation (e.g., {'open_ended': 'openEnded'}). Useful when upstream systems use different naming conventions."
+                }
+            },
+            {
+                "name": "strip_unknown",
+                "type": "boolean",
+                "nullable": true,
+                "metadata": {
+                    "description": "If true (default), properties not declared in the schema are dropped when additionalProperties is false, instead of raising an error."
+                }
+            },
+            {
+                "name": "verbose",
+                "type": "boolean",
+                "nullable": true,
+                "metadata": {
+                    "description": "If true, enables debug logging at each processing step. Defaults to false."
+                }
+            },
+            {
+                "name": "env_overrides",
+                "type": "map",
+                "nullable": true,
+                "metadata": {
+                    "description": "Optional dictionary of environment variable overrides to apply at runtime."
+                }
+            }
+        ]
+    }
+]

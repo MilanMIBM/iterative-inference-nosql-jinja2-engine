@@ -381,7 +381,7 @@ def _(
         if set_up_baseline_documents.value
         else None
     )
-    template_upload_status
+    print(template_upload_status)
     return
 
 

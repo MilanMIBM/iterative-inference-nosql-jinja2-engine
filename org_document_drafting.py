@@ -39,12 +39,12 @@ def _():
     except:  # noqa: E722
         load_all_dotenv("config", verbose=True)
     return (
-        sortable_kv,
         initialize_astradb_database,
         initialize_cloudant_database,
         initialize_hcd_database,
         initialize_mongodb_database,
         records_to_dict,
+        sortable_kv,
         upload_single_document,
     )
 
@@ -87,6 +87,14 @@ def _(db_provider):
     # **Organization Context** *- Drafting Dashboard - v.2.0*
     ### Notebook that allows users to create and upload organizational context documents to IBM Cloudant or AstraDB (WIP) for use in generative AI usecases as common context across an organization. The file will be uploaded to the database and be available for use.
     {db_provider.center()}
+    """)
+    return
+
+
+@app.cell
+def _():
+    mo.md("""
+    > [BUG TO FIX] **Note to self, fix the issue of empty strings/keys from the key value pair setups when sending the documents in. Make it clear out any before submission.**
     """)
     return
 
@@ -152,7 +160,10 @@ def _(
         initialize_hcd_database(
             hcd_api_endpoint, hcd_api_username, hcd_api_password, hcd_keyspace
         )
-        if hcd_api_endpoint and hcd_api_username and hcd_api_password and hcd_keyspace
+        if hcd_api_endpoint
+        and hcd_api_username
+        and hcd_api_password
+        and hcd_keyspace
         else None
     )
     return (hcd,)
@@ -193,9 +204,18 @@ def _(astradb, cloudant, db_provider, hcd, mongodb):
 @app.cell
 def _():
     term_template = [
-        {"original": "<Term to Replace>", "replacement": "<Bias to Replacement Term>"},
-        {"original": "<Term to Replace>", "replacement": "<Bias to Replacement Term>"},
-        {"original": "<Term to Replace>", "replacement": "<Bias to Replacement Term>"},
+        {
+            "original": "<Term to Replace>",
+            "replacement": "<Bias to Replacement Term>",
+        },
+        {
+            "original": "<Term to Replace>",
+            "replacement": "<Bias to Replacement Term>",
+        },
+        {
+            "original": "<Term to Replace>",
+            "replacement": "<Bias to Replacement Term>",
+        },
     ]
     print(term_template)
     taxonomy_template = [
@@ -226,7 +246,6 @@ def _(sortable_kv, term_template):
         editable=True,
         movable=True,
     )
-
     return (term_editor,)
 
 
@@ -252,7 +271,6 @@ def _(sortable_kv, taxonomy_template):
         editable=True,
         movable=True,
     )
-
     return (taxonomy_editor,)
 
 
@@ -267,7 +285,7 @@ def _(records_to_dict, taxonomy_editor):
 
 
 @app.cell
-def _(sortable_kv, offerings_kv_template):
+def _(offerings_kv_template, sortable_kv):
     offerings_kv = sortable_kv(
         label="Offerings",
         value=offerings_kv_template,
@@ -278,7 +296,6 @@ def _(sortable_kv, offerings_kv_template):
         editable=True,
         movable=True,
     )
-
     return (offerings_kv,)
 
 
@@ -453,6 +470,35 @@ def _(
     return (context_document_preview,)
 
 
+@app.function
+def clean_document(obj):
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            if k is None:
+                continue
+            key = str(k).strip()
+            if key == "":
+                continue
+            cleaned_value = clean_document(v)
+            if cleaned_value in (None, "", [], {}):
+                continue
+            cleaned[key] = cleaned_value
+        return cleaned
+    elif isinstance(obj, list):
+        cleaned_list = []
+        for item in obj:
+            cleaned_item = clean_document(item)
+            if cleaned_item in (None, "", [], {}):
+                continue
+            cleaned_list.append(cleaned_item)
+        return cleaned_list
+    elif isinstance(obj, str):
+        return obj.strip()
+    else:
+        return obj
+
+
 @app.cell
 def _(
     active_db_client,
@@ -491,7 +537,7 @@ def _(
             upload_single_document(
                 db_client=active_db_client,
                 db_name=db_org_context,
-                doc=context_document,
+                doc=clean_document(context_document),
                 provider=active_db_provider,
             )
             provider_label = {
@@ -505,7 +551,39 @@ def _(
             )
     else:
         org_id = status_printout = None
-    return (status_printout,)
+    return context_document, status_printout
+
+
+@app.cell
+def _(context_document, upload_org_context):
+    if upload_org_context.value:
+        pre_cleaning_doc = mo.vstack(
+            ["**Pre-cleanup document**", context_document], gap=1
+        )
+        post_cleaning_doc = mo.vstack(
+            ["**Post-cleanup document**", clean_document(context_document)], gap=1
+        )
+        uploaded_doc_preview_stack = mo.hstack(
+            [pre_cleaning_doc, post_cleaning_doc], justify="space-around"
+        )
+        uploaded_doc_preview_accordion = mo.accordion(
+            {
+                "Uploaded JSON document *(pre and post cleanup)*": uploaded_doc_preview_stack
+            }
+        )
+    else:
+        uploaded_doc_preview_accordion = mo.accordion(
+            {
+                "Uploaded JSON document *(pre and post cleanup)*": "No Document Uploaded Yet..."
+            }
+        )
+    return (uploaded_doc_preview_accordion,)
+
+
+@app.cell
+def _(uploaded_doc_preview_accordion):
+    uploaded_doc_preview_accordion
+    return
 
 
 if __name__ == "__main__":

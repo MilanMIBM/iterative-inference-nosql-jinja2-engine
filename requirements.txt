@@ -9,7 +9,7 @@ marimo[mcp]
 wigglystuff
 ibm-watsonx-ai
 openai
-ibm-secrets-manager-sdk
+python-lsp-server
 jsonpath-python
 python-dotenv
 elasticsearch

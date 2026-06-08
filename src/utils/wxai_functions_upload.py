@@ -19,14 +19,14 @@ Usage as module (CPD):
         --cpd
 
 Usage as callable script:
-    python src/utils/sw_compatible/wxai_functions_upload.py \
+    python src/utils/wxai_functions_upload.py \
         --folder_path ./my_function_folder \
         --function_file score.py \
         --wx_api_key <key> \
         --wx_space_id <space_id>
 
 Usage as callable script (CPD):
-    python src/utils/sw_compatible/wxai_functions_upload.py \
+    python src/utils/wxai_functions_upload.py \
         --folder_path ./my_function_folder \
         --function_file score.py \
         --wx_api_key <key> \

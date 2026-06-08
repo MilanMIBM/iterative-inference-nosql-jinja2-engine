@@ -216,7 +216,10 @@ def _(
         initialize_hcd_database(
             hcd_api_endpoint, hcd_api_username, hcd_api_password, hcd_keyspace
         )
-        if hcd_api_endpoint and hcd_api_username and hcd_api_password and hcd_keyspace
+        if hcd_api_endpoint
+        and hcd_api_username
+        and hcd_api_password
+        and hcd_keyspace
         else None
     )
     return (hcd,)
@@ -371,7 +374,9 @@ def _(
             or [default_chat_model]
         )
     else:
-        model_options = get_models(client, provider="watsonx") or [default_chat_model]
+        model_options = get_models(client, provider="watsonx") or [
+            default_chat_model
+        ]
     return (model_options,)
 
 
@@ -446,7 +451,9 @@ def _(
 ):
     _p = inference_provider.value
     _model_id = (
-        str(model_selector.value) or model_params.get("model_id") or default_chat_model
+        str(model_selector.value)
+        or model_params.get("model_id")
+        or default_chat_model
     )
     _params = model_params.get("params")
 
@@ -475,7 +482,7 @@ def _():
     default_messages_template = "00000000-0000-0000-0000-000000000000"
     default_parameter_set = "mistral-medium-2505_single_generation"
     default_system_templates = "main_system_templates_marimo_v2"
-    return default_parameter_set, default_system_templates, default_messages_template
+    return default_parameter_set, default_system_templates
 
 
 @app.cell
@@ -526,6 +533,7 @@ def _(
             else []
         )
 
+
     _provider_filter = {
         "$and": [
             {"parameter_set_name": {"$exists": True}},
@@ -547,7 +555,9 @@ def _(
             if not model_param_targets:
                 model_param_targets = _fetch_param_targets(_unfiltered)
             if not model_param_targets:
-                model_param_targets = [{"parameter_set_name": default_parameter_set}]
+                model_param_targets = [
+                    {"parameter_set_name": default_parameter_set}
+                ]
         except Exception:
             model_param_targets = [{"parameter_set_name": default_parameter_set}]
 
@@ -684,6 +694,20 @@ def _(
     retrieve_documents,
 ):
     # Retrieves all organizational context samples available
+    def _extract_org_ids(org_info):
+        if isinstance(org_info, dict):
+            docs = org_info.get("docs", [])
+        elif isinstance(org_info, list):
+            docs = org_info
+        else:
+            docs = []
+        return {
+            f"{org['org_context']['client_name']} ({org['org_id']})": org["org_id"]
+            for org in docs
+            if org.get("org_context", {}).get("client_name")
+        }
+
+
     try:
         org_info = (
             retrieve_documents(
@@ -697,11 +721,7 @@ def _(
             if active_db_client is not None
             else {}
         )
-        org_ids = {
-            f"{org['org_context']['client_name']} ({org['org_id']})": org["org_id"]
-            for org in org_info.get("docs", [])
-            if org.get("org_context", {}).get("client_name")
-        }
+        org_ids = _extract_org_ids(org_info)
     except Exception as e:  # noqa: F841
         time.sleep(1.05)
         org_info = (
@@ -716,11 +736,7 @@ def _(
             if active_db_client is not None
             else {}
         )
-        org_ids = {
-            f"{org['org_context']['client_name']} ({org['org_id']})": org["org_id"]
-            for org in org_info.get("docs", [])
-            if org.get("org_context", {}).get("client_name")
-        }
+        org_ids = _extract_org_ids(org_info)
     return (org_ids,)
 
 
@@ -750,16 +766,17 @@ def _(
 
 @app.cell
 def _(organizational_context):
+    _org_docs = (
+        organizational_context.get("docs")
+        if isinstance(organizational_context, dict)
+        else organizational_context
+    )
     org_specs = (
-        organizational_context.get("docs")[0].get("org_context")
-        if organizational_context.get("docs")
-        and len(organizational_context.get("docs")) > 0
-        else {}
+        _org_docs[0].get("org_context") if _org_docs and len(_org_docs) > 0 else {}
     )
     output_language = (
-        organizational_context.get("docs")[0].get("language")
-        if organizational_context.get("docs")
-        and len(organizational_context.get("docs")) > 0
+        _org_docs[0].get("language")
+        if _org_docs and len(_org_docs) > 0
         else "English"
     )
     return org_specs, output_language
@@ -1013,7 +1030,9 @@ def _(
 
     if isinstance(messages_to_render, dict):
         _iter_docs = messages_to_render.get("docs", [])
-        created_iteration_id = _iter_docs[0].get("iteration_id") if _iter_docs else None
+        created_iteration_id = (
+            _iter_docs[0].get("iteration_id") if _iter_docs else None
+        )
 
     _p = inference_provider.value
     if _p == "watsonx-ai":
@@ -1036,6 +1055,7 @@ def _(
         _inf_provider = "watsonx"
         _model_id = None
         _agent_id = None
+
 
     def _on_iteration_complete(iteration_index, result, *_):
         if not (created_iteration_id and active_db_client):
@@ -1061,6 +1081,7 @@ def _(
             ],
             token_count=result.get("usage", {}),
         )
+
 
     all_inference_results = (
         run_iterative_inference(
@@ -1189,7 +1210,9 @@ def _(
             )
             if retrieved_iteration:
                 all_iteration_results = (  # noqa: F841
-                    retrieved_iteration[0].get("generation_content", {}).get("results")
+                    retrieved_iteration[0]
+                    .get("generation_content", {})
+                    .get("results")
                 )
     return
 
@@ -1291,7 +1314,9 @@ def _(all_inference_choices, completed_generation):
                 choice_num = idx + 1
                 label = f"Inference Choice Response {choice_num}"
 
-                message_content = output_choice.get("message", {}).get("content", "")
+                message_content = output_choice.get("message", {}).get(
+                    "content", ""
+                )
                 choice_markdown = []
                 choice_raw_content = []
 
@@ -1368,12 +1393,12 @@ def _(org_specs):
 def _(output_review_tabs):
     rendered_widgets_accordion = mo.accordion(  # noqa: F841
         {
-            "## **Rendered Outputs** *(Click to Expand)*": mo.vstack(
+            "### **Rendered Outputs** *(Click to Expand)*": mo.vstack(
                 [output_review_tabs], gap=3
             )
         }
     )
-    return
+    return (rendered_widgets_accordion,)
 
 
 @app.cell
@@ -1393,6 +1418,12 @@ def _(all_inference_results):
 
 
 @app.cell
+def _(rendered_widgets_accordion):
+    rendered_widgets_accordion
+    return
+
+
+@app.cell
 def _(preview_llm_output_json, preview_rendered_messages_json):
     debugging_previews = mo.accordion(
         {
@@ -1404,11 +1435,6 @@ def _(preview_llm_output_json, preview_rendered_messages_json):
         }
     )
     debugging_previews
-    return
-
-
-@app.cell
-def _():
     return
 
 
@@ -1510,7 +1536,9 @@ def _(active_db_provider, db_validation_df):
             show_download=False,
             selection=None,
             label=f"Selected provider: **{active_db_provider}**",
-            text_justify_columns={col: "center" for col in db_validation_df.columns},
+            text_justify_columns={
+                col: "center" for col in db_validation_df.columns
+            },
         )
         if db_validation_df is not None
         else mo.ui.table([{}])
@@ -1556,7 +1584,7 @@ def _(
         if set_up_baseline_documents.value
         else None
     )
-    template_upload_status
+    print(template_upload_status)
     return
 
 

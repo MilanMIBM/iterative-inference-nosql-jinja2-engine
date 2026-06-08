@@ -1,0 +1,56 @@
+[
+    {
+        "id": "1",
+        "type": "struct",
+        "fields": [
+            {
+                "name": "target",
+                "type": "string",
+                "nullable": false,
+                "metadata": {
+                    "description": "Dotted import path to a Python class, method or function to inspect (e.g. 'collections.OrderedDict', 'json.JSONEncoder', 'datetime.datetime.fromtimestamp'). May also be an alias key resolved through 'type_mapping'."
+                }
+            },
+            {
+                "name": "config",
+                "type": "map",
+                "nullable": true,
+                "metadata": {
+                    "description": "Dictionary of parameters/keyword arguments to validate against the target's signature. Filtered to accepted parameters, with missing required parameters filled and values coerced to expected types."
+                }
+            },
+            {
+                "name": "type_mapping",
+                "type": "map",
+                "nullable": true,
+                "metadata": {
+                    "description": "Optional dictionary carrying alias->dotted-path entries (to resolve 'target') and/or param_name->type-hint entries ('int'|'float'|'str'|'bool'|'list'|'dict') used to coerce specific config values."
+                }
+            },
+            {
+                "name": "call_target",
+                "type": "boolean",
+                "nullable": true,
+                "metadata": {
+                    "description": "If true, instantiate/call the target with the validated params to confirm acceptance. Defaults to false (signature-only inspection)."
+                }
+            },
+            {
+                "name": "verbose",
+                "type": "boolean",
+                "nullable": true,
+                "metadata": {
+                    "description": "If true, enables debug logging at each processing step. Defaults to false."
+                }
+            },
+            {
+                "name": "env_overrides",
+                "type": "map",
+                "nullable": true,
+                "metadata": {
+                    "description": "Optional dictionary of environment variable overrides to apply at runtime."
+                }
+            }
+        ]
+    }
+]
