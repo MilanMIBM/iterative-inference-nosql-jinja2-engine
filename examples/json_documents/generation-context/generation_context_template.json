@@ -3,7 +3,7 @@
   "user_id": "00000000-0000-0000-0000-000000000000",
   "org_id": "00000000-0000-0000-0000-000000000000",
   "parameter_set_name": "rhai-gpt-oss-120b_single_generation",
-  "system_template_name": "main_system_templates_marimo_v2",
+  "system_template_name": "",
   "iteration_length": 1,
   "language": "English",
   "user_context": {
