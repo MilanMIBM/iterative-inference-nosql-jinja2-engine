@@ -66,7 +66,7 @@ def data_validator_library():
     Returns:
     {
         "predictions": [{
-            "fields": ["inspection_result"],
+            "fields": ["validation_result"],
             "values": [[{...validated params...}]]
         }]
     }
@@ -74,7 +74,7 @@ def data_validator_library():
     When verbose=true:
     {
         "predictions": [{
-            "fields": ["inspection_result", "debug_logs"],
+            "fields": ["validation_result", "debug_logs"],
             "values": [[{...validated params...}, ["[1/7] ...", ...]]]
         }]
     }
@@ -489,7 +489,7 @@ def data_validator_library():
                 state.update(env_overrides)
 
             # ================================================================
-            # CUSTOM LOGIC - Library Target Inspection
+            # CUSTOM LOGIC - Library Signature Validation
             # ================================================================
             target = params.get("target", params.get("param_0"))
             config = params.get("config", params.get("param_1"))
@@ -516,14 +516,14 @@ def data_validator_library():
             # ================================================================
 
             if verbose:
-                inspection_result, debug_logs = result
+                validation_result, debug_logs = result
                 return create_success_response(
-                    fields=["inspection_result", "debug_logs"],
-                    values=[inspection_result, debug_logs],
+                    fields=["validation_result", "debug_logs"],
+                    values=[validation_result, debug_logs],
                 )
 
             return create_success_response(
-                fields=["inspection_result"],
+                fields=["validation_result"],
                 values=[result],
             )
 
@@ -538,4 +538,4 @@ def data_validator_library():
 # ============================================================================
 # FUNCTION INITIALIZATION
 # ============================================================================
-score = library_inspector()
+score = data_validator_library()
