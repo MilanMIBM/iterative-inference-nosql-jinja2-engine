@@ -547,7 +547,7 @@ def _(
 @app.cell
 def _():
     ### Fallback defaults
-    default_messages_template = "00000000-0000-0000-0000-000000000000"
+    default_messages_template = "00000000-0000-0000-0000-000000000000"  # noqa: F841
     default_parameter_set = "rhai-gpt-oss-120b_single_generation"
     default_system_templates = "marimo_create_widgets_setup"
     return default_parameter_set, default_system_templates
@@ -1402,7 +1402,7 @@ def _(
                 docs_only=True,
             )
             if retrieved_iteration:
-                all_iteration_results = (
+                all_iteration_results = (  # noqa: F841
                     retrieved_iteration[0].get("generation_content", {}).get("results")
                 )
     return

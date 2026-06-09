@@ -8,7 +8,6 @@ requests
 marimo[mcp]
 wigglystuff
 ibm-watsonx-ai
-openai
 python-lsp-server
 jsonpath-python
 python-dotenv
@@ -20,3 +19,4 @@ astrapy
 pillow
 pillow-heif
 pyperf
+openai
