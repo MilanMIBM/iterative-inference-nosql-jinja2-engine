@@ -30,6 +30,7 @@ def _():
         parse_yaml_documents,
         retrieve_documents,
         upload_documents_from_mapping,
+        render_template_from_dataframe,
         purge_databases,
     )
 
@@ -85,6 +86,7 @@ def _():
         build_additional_fields,
         filter_links,
         filter_notice_titles,
+        render_template_from_dataframe,
         search_ted_notices,
         ted_buyer_details,
         ted_default_fields,
@@ -157,7 +159,7 @@ def _(default_target):
 def _():
     ted_search_from_date = mo.ui.date(
         label="**Tenders from** (to today):",
-        value="2026-01-01",
+        value="2025-01-01",
     )
     return (ted_search_from_date,)
 
@@ -279,7 +281,7 @@ def _(search_results, search_results_filtered, wrap_columns):
         tender_table = (
             mo.ui.table(
                 search_results_filtered,
-                page_size=8,
+                page_size=20,
                 wrapped_columns=wrap_columns,
                 freeze_columns_left=(
                     ["notice-title", "links"]
@@ -295,7 +297,7 @@ def _(search_results, search_results_filtered, wrap_columns):
         tender_table = (
             mo.ui.table(
                 search_results_filtered,
-                page_size=8,
+                page_size=20,
                 freeze_columns_left=(
                     ["notice-title", "links"]
                     if "notice-title" in search_results_filtered
@@ -312,7 +314,8 @@ def _(search_results, search_results_filtered, wrap_columns):
 
 
 @app.cell
-def _():
+def _(ted_search_from_date):
+    print(ted_search_from_date.value)
     return
 
 
@@ -324,21 +327,191 @@ def _():
 
 @app.cell
 def _():
+    get_profile = mo.ui.run_button(label="**Retrieve profile data**")
+    get_profile
+    return (get_profile,)
+
+
+@app.cell
+def _():
+    buyer_profile_fields = [
+        "organisation-name-buyer",
+        "organisation-identifier-buyer",
+        "organisation-country-buyer",
+        "organisation-city-buyer",
+        "organisation-street-buyer",
+        "organisation-internet-address-buyer",
+        "organisation-email-buyer",
+        "organisation-tel-buyer",
+        "notice-identifier",
+        "publication-number",
+        "description-proc",
+    ]
+
+    buyer_financial_profile_fields = [
+        "BT-24-Procedure",
+        "description-proc",
+        "notice-title",
+        "estimated-value-proc",
+        "additional-information",
+        "additional-info-proc",
+        "result-value-notice",
+        "total-value",
+        "total-value-cur",
+        "TV",
+        "TVL",
+    ]
+    return buyer_financial_profile_fields, buyer_profile_fields
+
+
+@app.cell
+def _(
+    buyer_financial_profile_fields,
+    buyer_profile_fields,
+    filter_notice_titles,
+    get_profile,
+    search_ted_notices,
+    ted_languages,
+    ted_search_from_date,
+    ted_search_max_items,
+    ted_search_target_org,
+):
+    if get_profile.value:
+        buyer_profile = search_ted_notices(
+            organization_name=str(ted_search_target_org.value),
+            start_date=str(ted_search_from_date.value),
+            limit=int(ted_search_max_items.value),
+            use_custom_default_fields=True,
+            custom_default_fields=buyer_profile_fields,
+            additional_fields=[],
+        )
+
+        buyer_financial_profile = search_ted_notices(
+            organization_name=str(ted_search_target_org.value),
+            start_date=str(ted_search_from_date.value),
+            limit=int(ted_search_max_items.value),
+            use_custom_default_fields=True,
+            custom_default_fields=buyer_financial_profile_fields,
+            additional_fields=[],
+        )
+        buyer_financial_profile = filter_notice_titles(
+            buyer_financial_profile,
+            ted_languages.value,
+            extract_text_only=True,
+        )
+        # buyer_profile_filtered = filter_notice_titles(
+        #     buyer_profile,
+        #     ted_languages.value,
+        #     extract_text_only=True,
+        # )
+        # buyer_profile_filtered = filter_links(
+        #     buyer_profile_filtered,
+        #     ted_languages.value,
+        #     extract_text_only=True,
+        # )
+        # buyer_profile_wrap_columns = list(buyer_profile_filtered)
+    else:
+        buyer_profile = buyer_financial_profile = None
+    return buyer_financial_profile, buyer_profile
+
+
+@app.cell
+def _(buyer_financial_profile):
+    mo.ui.table(
+        buyer_financial_profile,
+        wrapped_columns=["notice-title"],
+        page_size=5,
+        freeze_columns_left=["notice-title", "total-value"],
+    ) if buyer_financial_profile is not None else None
+    return
+
+
+@app.cell
+def _(buyer_profile):
+    buyer_profile
     return
 
 
 @app.cell
 def _():
+    # buyer_profile_table = (
+    #     mo.ui.table(
+    #         buyer_profile_filtered,
+    #         page_size=2,
+    #         wrapped_columns=buyer_profile_wrap_columns
+    #         if buyer_profile_wrap_columns is not None
+    #         else [],
+    #         freeze_columns_left=(
+    #             ["notice-identifier", "notice-title", "links"]
+    #             if buyer_profile_filtered is not None
+    #             and "notice-title" in buyer_profile_filtered
+    #             and "links" in buyer_profile_filtered
+    #             else ["notice-identifier"]
+    #             if buyer_profile_filtered is not None
+    #             and "notice-identifier" in buyer_profile_filtered
+    #             else ["notice-title"]
+    #             if buyer_profile_filtered is not None
+    #             and "notice-title" in buyer_profile_filtered
+    #             else ["links"]
+    #             if buyer_profile_filtered is not None
+    #             and "links" in buyer_profile_filtered
+    #             else None
+    #         ),
+    #     )
+    #     if get_profile.value and buyer_profile_filtered is not None
+    #     else None
+    # )
+    # buyer_profile_table
+    return
+
+
+@app.cell
+def _(
+    buyer_profile,
+    get_profile,
+    render_template_from_dataframe,
+    ted_search_from_date,
+    ted_search_target_org,
+):
+    # coupled_buyer_profile_fields = {
+    #     "contact_details": {
+    #         "email": "organisation-email-buyer",
+    #         "phone": "organisation-tel-buyer",
+    #         "notice-id": "notice-identifier",
+    #     }
+    # }
+    additional_context = {
+        "org_profile_name": str(ted_search_target_org.value),
+        "language": "eng",
+        "preferred_file_format": "pdf",
+        "profiling_period_from": str(ted_search_from_date.value),
+        "profiling_period_to": str(time.strftime("%Y-%m-%d")),
+    }
+    print(additional_context)
+    # template = "examples/jinja2_templates/tender_org_profiler.yaml.j2"
+    template_with_coupled_fields = (
+        "examples/jinja2_templates/tender_org_profiler_with_coupled_fields.yaml.j2"
+    )
+
+    buyer_profile_doc = (
+        render_template_from_dataframe(
+            template=template_with_coupled_fields,
+            df=buyer_profile,
+            extra_context=additional_context,
+        )
+        if get_profile.value
+        else {}
+    )
+    buyer_profile_doc
     return
 
 
 @app.cell
 def _():
-    return
-
-
-@app.cell
-def _():
+    mo.md(r"""
+    /// warning | Note to self - What to add/change
+    ### Add a total value addition to notices in their own section with their own descriptions ***(move "description-proc" there)***, also add a sum value of all total values ***("total-value")*** of tenders at the top of all the org context, as well as total awareded value, and currencies ***("total-value-cur")***
+    """)
     return
 
 

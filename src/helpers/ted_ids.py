@@ -16,6 +16,7 @@ ted_language_ids = {
     "Latvian": "lav",
     "Lithuanian": "lit",
     "Maltese": "mlt",
+    "Norwegian": "nor",
     "Polish": "pol",
     "Portuguese": "por",
     "Romanian": "ron",

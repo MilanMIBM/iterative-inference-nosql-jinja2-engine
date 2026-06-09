@@ -1,0 +1,49 @@
+{#- ~~~~~~~~~~~~~~~~~~~~~~~~~~ Yaml defined Document Structure ~~~~~~~~~~~~~~~~~~~~~~~~~~ -#}
+language: {{ language | default('eng') }}
+preferred_file_format: {{ preferred_file_format | default('pdf') }}
+org_profile_name: {{ org_profile_name | slugify }}
+context_record_id: {{ identifier | default(uuid4(), true) }}
+org_context:
+{%- if organisation_city_buyer %}
+  org_cities:
+  {%- for item in organisation_city_buyer %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if organisation_email_buyer %}
+  org_emails:
+  {%- for item in organisation_email_buyer %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if organisation_country_buyer %}
+  org_countries:
+  {%- for item in organisation_country_buyer %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if organisation_tel_buyer %}
+  org_phones:
+  {%- for item in organisation_tel_buyer %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if organisation_internet_address_buyer %}
+  webpages:
+  {%- for item in organisation_internet_address_buyer %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if links %}
+  org_links:
+  {%- for item in links %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if contact_details %}
+  contact_details:
+  {%- for item in contact_details %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{#- ~~~~~~~~~~~~~~~~~~~~~~~~~~ END OF STRUCTURE SECTION ~~~~~~~~~~~~~~~~~~~~~~~~~~ -#}

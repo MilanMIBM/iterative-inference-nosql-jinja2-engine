@@ -34,6 +34,15 @@ def build_additional_fields(
     return additional_fields
 
 
+# Fields that must always be present in the requested field set: the field we
+# search on plus the identifiers needed to key/join results downstream.
+REQUIRED_FIELDS = [
+    "organisation-name-buyer",  # This is the field we're searching on
+    "buyer-identifier",
+    "notice-identifier",
+]
+
+
 def search_ted_notices(
     organization_name: str,
     start_date: Optional[str] = None,
@@ -42,6 +51,8 @@ def search_ted_notices(
     page: int = 1,
     additional_fields: Optional[List[str]] = None,
     return_only_notices=True,
+    use_custom_default_fields: bool = False,
+    custom_default_fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Search TED notices for a specific organization by name.
@@ -54,6 +65,12 @@ def search_ted_notices(
         page (int): Page number to retrieve
         additional_fields (List[str], optional): Additional fields to include in response
         return_only_notices (boolean): Returns only the notice items as part of a dataframe
+        use_custom_default_fields (bool): When True, replace the built-in default
+            field set with ``custom_default_fields``. The fields in
+            ``REQUIRED_FIELDS`` (organisation-name-buyer, buyer-identifier,
+            notice-identifier) are always included regardless.
+        custom_default_fields (List[str], optional): The replacement default field
+            set to use when ``use_custom_default_fields`` is True.
 
     Returns:
         Dict containing the API response with notices
@@ -101,19 +118,33 @@ def search_ted_notices(
     expert_query = " AND ".join(query_parts)
 
     # Use field names that are confirmed to exist in TED
-    default_fields = [
-        "notice-identifier",
-        "publication-date",
-        "notice-title",
-        "organisation-name-buyer",  # This is the field we're searching on
-        "buyer-identifier",  # Keep this to get org numbers if available
-        "procedure-identifier",
-        "notice-type",
-        "organisation-country-buyer",
+    if use_custom_default_fields:
+        default_fields = list(custom_default_fields or [])
+    else:
+        default_fields = [
+            "notice-identifier",
+            "publication-date",
+            "notice-title",
+            "organisation-name-buyer",  # This is the field we're searching on
+            "buyer-identifier",  # Keep this to get org numbers if available
+            "procedure-identifier",
+            "notice-type",
+            "organisation-country-buyer",
+        ]
+
+    # The required fields must always be present, even with a custom default set.
+    default_fields = REQUIRED_FIELDS + [
+        f for f in default_fields if f not in REQUIRED_FIELDS
     ]
 
     if additional_fields:
-        fields = list(set(default_fields + additional_fields))
+        # Preserve order while de-duplicating, rather than set() which scrambles it.
+        seen = set()
+        fields = []
+        for field in default_fields + additional_fields:
+            if field not in seen:
+                seen.add(field)
+                fields.append(field)
     else:
         fields = default_fields
 
@@ -652,9 +683,7 @@ def add_link_type_column(
 
         try:
             data_dict = (
-                json.loads(links_value)
-                if isinstance(links_value, str)
-                else links_value
+                json.loads(links_value) if isinstance(links_value, str) else links_value
             )
         except (json.JSONDecodeError, TypeError):
             return None

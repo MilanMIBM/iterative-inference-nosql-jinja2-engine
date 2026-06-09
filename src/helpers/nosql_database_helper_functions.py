@@ -8,6 +8,7 @@ from pathlib import Path
 
 import certifi
 import marimo as mo
+import pandas as pd
 from astrapy import DataAPIClient
 from astrapy.authentication import UsernamePasswordTokenProvider
 from astrapy.constants import Environment as DataStaxEnvironment
@@ -923,6 +924,11 @@ def render_jinja2_templates(
             - If input was single dict, returns rendered document
     """
     env = Environment()
+    env.globals["uuid4"] = lambda: str(uuid.uuid4())
+    env.filters["slugify"] = _slug
+    env.filters["country_info"] = _country_info
+    env.filters["dedupe_cased"] = _dedupe_cased
+    env.filters["street_info"] = _street_info
 
     def extract_docs_list(input_docs) -> List[Dict]:
         """Extract a list of documents from various input formats."""
@@ -1055,6 +1061,339 @@ def render_jinja2_templates(
         return [render_document(doc) for doc in docs]
     else:
         raise ValueError("docs must be a dict or list")
+
+
+def _decompose_cell(value) -> List[str]:
+    """Flatten a single dataframe cell into a list of plain string values.
+
+    Cells may arrive in several encodings, all of which collapse here to a flat
+    list of strings:
+        - JSON-string arrays:      '["KJELLER"]'            -> ["KJELLER"]
+        - JSON-string objects:     '{"eng":["Forsvarets"]}' -> ["Forsvarets"]
+        - already-parsed lists/dicts (same handling, no json.loads needed)
+        - bare scalars:            'NOR'                    -> ["NOR"]
+
+    Empty / NaN cells yield an empty list. Anything unparseable falls back to its
+    string form so no data is silently dropped.
+    """
+    try:
+        if pd.isna(value):
+            return []
+    except (TypeError, ValueError):
+        pass  # arrays/dicts raise on isna; they are handled below
+
+    # Parse JSON-encoded strings; leave already-structured values as-is.
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        try:
+            value = json.loads(stripped)
+        except (json.JSONDecodeError, ValueError):
+            return [stripped]
+
+    def walk(obj) -> List[str]:
+        if obj is None:
+            return []
+        if isinstance(obj, str):
+            return [obj] if obj.strip() else []
+        if isinstance(obj, dict):
+            out = []
+            for v in obj.values():
+                out.extend(walk(v))
+            return out
+        if isinstance(obj, (list, tuple, set)):
+            out = []
+            for v in obj:
+                out.extend(walk(v))
+            return out
+        # numbers, bools, etc.
+        return [str(obj)]
+
+    return walk(value)
+
+
+def _slug(name: str) -> str:
+    """Normalise a column/variable name for matching.
+
+    Lowercases and collapses non-alphanumeric runs to a single underscore so a
+    column like ``organisation-city-buyer`` and the Jinja2 variable
+    ``organisation_city_buyer`` resolve to the same key (``organisation_city_buyer``).
+    """
+    return re.sub(r"[^0-9a-z]+", "_", str(name).lower()).strip("_")
+
+
+def _country_info(code: Any) -> Dict[str, Any]:
+    """Resolve a country code/name to its identifiers, name, and flag.
+
+    Registered as the ``country_info`` Jinja2 filter. ``code`` is whatever the
+    source provides (e.g. an ISO 3166-1 alpha-3 code like ``NOR``); pycountry's
+    case-insensitive ``lookup`` also accepts alpha-2, numeric, or the name. The
+    returned dict carries ``country_id_shorthand`` (alpha-2) alongside
+    ``country_id`` (the original input), ``country``, and ``flag``. If the
+    country can't be resolved the original value is preserved and the resolved
+    fields are left ``None`` so rendering never fails on bad input.
+    """
+    import pycountry
+
+    info = {
+        "country_id": code,
+        "country_id_shorthand": None,
+        "country": None,
+        "flag": None,
+    }
+    if not code:
+        return info
+    try:
+        match = pycountry.countries.lookup(str(code))
+    except LookupError:
+        return info
+    info["country_id_shorthand"] = getattr(match, "alpha_2", None)
+    info["country"] = getattr(match, "name", None)
+    info["flag"] = getattr(match, "flag", None)
+    return info
+
+
+def _street_info(value: Any) -> Any:
+    """Return the street value unchanged.
+
+    Registered as the ``street_info`` Jinja2 filter. Currently a pass-through:
+    the raw street string is kept as-is (no splitting of house number, no
+    lookup). Exists as a named seam so the template can mark street fields and
+    the parsing/enrichment can be added here later without touching templates.
+    """
+    return value
+
+
+def _dedupe_cased(values: Any) -> List[Any]:
+    """Drop case-insensitive duplicate strings, preferring the better-cased form.
+
+    Registered as the ``dedupe_cased`` Jinja2 filter. When two entries differ
+    only by letter case (e.g. ``"Oslo"`` and ``"oslo"``), only one is kept: the
+    variant that is *not* all-lowercase wins, so ``["Moss", "Oslo", "oslo"]``
+    collapses to ``["Moss", "Oslo"]``. First-seen order is preserved. Non-string
+    items pass through untouched and are de-duplicated by identity/equality.
+    """
+    if not isinstance(values, (list, tuple)):
+        return values
+
+    best: Dict[str, Any] = {}  # casefolded key -> chosen value
+    order: List[str] = []      # casefolded keys, in first-seen order
+    passthrough: List[Any] = []
+
+    for item in values:
+        if not isinstance(item, str):
+            if item not in passthrough:
+                passthrough.append(item)
+            continue
+        key = item.casefold()
+        if key not in best:
+            best[key] = item
+            order.append(key)
+        else:
+            # Prefer a non-all-lowercase variant over an all-lowercase one.
+            current = best[key]
+            if current.islower() and not item.islower():
+                best[key] = item
+
+    return [best[k] for k in order] + passthrough
+
+
+def render_template_from_dataframe(
+    template: str,
+    df: pd.DataFrame,
+    *,
+    is_path: bool = True,
+    extra_context: Optional[Dict[str, Any]] = None,
+    coupled_fields: Optional[Dict[str, Dict[str, str]]] = None,
+) -> Dict[str, Any]:
+    """Render any Jinja2 (YAML) template against a whole dataframe.
+
+    Template- and dataframe-agnostic: the *template* declares what to extract.
+    Every Jinja2 variable it references that slug-matches a dataframe column is
+    treated as an aggregated field. For each such variable, the matching column
+    is decomposed across *every* row (via :func:`_decompose_cell`), flattened to
+    strings, and de-duplicated (order-preserving). The resulting list is bound to
+    that variable before rendering.
+
+    Adding a new aggregated field therefore needs only a new ``{{ variable }}``
+    in the template whose name slug-matches a dataframe column -- no Python
+    change required. Feed in different templates and/or dataframes freely; no
+    column names or keys are hardcoded here.
+
+    Variables the template references that do *not* match a column (e.g. a fixed
+    ``name``, ``language``, or the ``uuid4`` global) are left to ``extra_context``
+    or to template defaults / globals.
+
+    If the template references a variable named ``rows``, it is bound to a list
+    with one dict per dataframe row (each cell decomposed to a flat list of
+    strings, keyed by both the original column name and its slug). This gives a
+    template true *per-record* access -- email, phone, and notice id from the
+    *same* row stay together -- which the aggregated/de-duplicated column
+    variables above cannot provide. A companion ``rows_raw`` (same shape, but
+    each cell parsed with its structure preserved rather than flattened) lets a
+    template navigate nested cells such as ``links`` (``format -> lang -> url``).
+    Both are only computed when referenced, so existing templates are unaffected.
+
+    Coupled fields keep multiple columns *row-aligned* instead of aggregating and
+    de-duplicating each independently. Each entry maps a template variable to a
+    ``{output_key: column}`` mapping; the variable is bound to a list with one
+    dict per dataframe row (rows where every mapped cell is empty are skipped).
+    For example::
+
+        coupled_fields={"contact_details": {
+            "email": "organisation-email-buyer",
+            "phone": "organisation-tel-buyer",
+            "notice-id": "notice-identifier",
+        }}
+
+    binds ``contact_details`` to ``[{"email": ..., "phone": ..., "notice-id": ...},
+    ...]`` so each record's email, phone, and notice identifier stay together.
+    Rows are skipped when every non-identifier value is empty (so a row carrying
+    only a notice id, with no email or phone, produces no entry); keys named
+    ``id``/``*-id``/``*_id`` are treated as identifiers for this check.
+
+    Args:
+        template: Either a path to a ``.j2`` file (default) or the template
+            source text itself (set ``is_path=False``).
+        df: Any dataframe whose rows feed the aggregated fields.
+        is_path: If True, ``template`` is read from disk; otherwise used as-is.
+        extra_context: Non-aggregated values (fixed scalars the template needs).
+            These take precedence and are not overwritten by column aggregation.
+        coupled_fields: Optional ``{variable: {output_key: column}}`` mapping for
+            row-aligned fields (see above). Columns are matched by slug, like the
+            aggregated fields. These take precedence over column aggregation for
+            the same variable name.
+
+    Returns:
+        The rendered template parsed into a JSON object (a ``dict``). The
+        template is rendered as YAML, then ``yaml.safe_load``-ed so callers get
+        a ready-to-store document rather than a raw string.
+    """
+    from jinja2 import meta
+
+    source = Path(template).read_text() if is_path else template
+
+    env = Environment()
+    env.globals["uuid4"] = lambda: str(uuid.uuid4())
+    env.filters["slugify"] = _slug
+    env.filters["country_info"] = _country_info
+    env.filters["dedupe_cased"] = _dedupe_cased
+    env.filters["street_info"] = _street_info
+
+    # Discover which variables the template actually references.
+    referenced = meta.find_undeclared_variables(env.parse(source))
+
+    # Index dataframe columns by their slug so template variables can match them.
+    columns_by_slug = {_slug(col): col for col in df.columns}
+
+    extra_context = extra_context or {}
+    extra_slugs = {_slug(k) for k in extra_context}
+
+    context: Dict[str, Any] = dict(extra_context)
+
+    for var in referenced:
+        var_slug = _slug(var)
+        # extra_context wins; never override an explicitly supplied value.
+        if var_slug in extra_slugs:
+            continue
+        column = columns_by_slug.get(var_slug)
+        if column is None:
+            continue  # not a dataframe-backed field (e.g. uuid4, a default)
+
+        seen = set()
+        values: List[str] = []
+        for cell in df[column].tolist():
+            for item in _decompose_cell(cell):
+                if item not in seen:
+                    seen.add(item)
+                    values.append(item)
+        context[var] = values
+
+    # Raw per-row access: when a template references `rows` (or `rows_raw`),
+    # expose one dict per dataframe row so it can build truly row-aligned
+    # structures itself, keyed by both the original column name and its slug.
+    # This preserves the per-record coupling that the aggregated, de-duplicated
+    # column variables above intentionally discard.
+    #   - `rows`     : each cell decomposed to a flat list of strings.
+    #   - `rows_raw` : each cell parsed but structure-preserved (dict/list/
+    #                  scalar), for navigating nested data like `links`.
+    if (
+        "rows" in referenced or "rows_raw" in referenced
+    ) and "rows" not in extra_slugs and "rows_raw" not in extra_slugs:
+        slug_by_column = {col: _slug(col) for col in df.columns}
+
+        def _parse_cell(value):
+            """Parse a cell to its structured value, preserving nesting.
+
+            Unlike :func:`_decompose_cell` (which flattens dicts/lists to a list
+            of strings), this keeps the original structure so templates can
+            navigate nested data such as ``links`` (``format -> lang -> url``).
+            JSON-encoded strings are decoded; everything else is returned as-is.
+            Empty / NaN cells become ``None``.
+            """
+            try:
+                if pd.isna(value):
+                    return None
+            except (TypeError, ValueError):
+                pass  # arrays/dicts raise on isna; handled below
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return None
+                try:
+                    return json.loads(stripped)
+                except (json.JSONDecodeError, ValueError):
+                    return stripped
+            return value
+
+        rows: List[Dict[str, Any]] = []
+        rows_raw: List[Dict[str, Any]] = []
+        for _, row in df.iterrows():
+            record: Dict[str, Any] = {}
+            record_raw: Dict[str, Any] = {}
+            for col in df.columns:
+                slug = slug_by_column[col]
+                record[col] = record[slug] = _decompose_cell(row[col])
+                record_raw[col] = record_raw[slug] = _parse_cell(row[col])
+            rows.append(record)
+            rows_raw.append(record_raw)
+        context["rows"] = rows
+        context["rows_raw"] = rows_raw
+
+    # Row-aligned coupled fields: keep multiple columns together per record
+    # instead of aggregating/de-duplicating each independently.
+    for var, key_to_column in (coupled_fields or {}).items():
+        if var not in referenced:
+            continue
+        # Resolve each output key's column by slug (like aggregated fields).
+        resolved = {
+            key: columns_by_slug.get(_slug(col))
+            for key, col in key_to_column.items()
+        }
+        resolved = {key: col for key, col in resolved.items() if col is not None}
+        if not resolved:
+            continue
+
+        # Identifier-like keys anchor a record but do not by themselves justify
+        # emitting one: a row with only a notice id (no email/phone) is dropped.
+        payload_keys = [
+            key for key in resolved
+            if not (key == "id" or key.endswith("-id") or key.endswith("_id"))
+        ]
+
+        records: List[Dict[str, Any]] = []
+        for _, row in df.iterrows():
+            record = {}
+            for key, col in resolved.items():
+                items = _decompose_cell(row[col])
+                record[key] = items[0] if items else None
+            if any(record[key] is not None for key in payload_keys):
+                records.append(record)
+        context[var] = records
+
+    rendered = env.from_string(source).render(**context)
+    return yaml.safe_load(rendered)
 
 
 # ---------------------------------------------------------------------------

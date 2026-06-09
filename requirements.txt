@@ -20,3 +20,4 @@ pillow
 pillow-heif
 pyperf
 openai
+pycountry
