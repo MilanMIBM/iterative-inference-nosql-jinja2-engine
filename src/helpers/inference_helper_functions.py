@@ -1,9 +1,21 @@
+# ================================================================================================================================================================
+# Inference Helper Functions developed for the EMEA - IBM Build Engineering team by Milan Mrdenovic (milan.mrdenovic@ibm.com)
+# Version: 1.3
+# Date: 13.05.2026
+# License: Apache 2.0 - https://www.apache.org/licenses/LICENSE-2.0
+# Supported providers - IBM watsonx.ai, IBM watsonx.orchestrate , Red Hat AI inference on IBM Cloud, OpenAI SDK compatible providers, IBM Consulting Advantage
+# ================================================================================================================================================================
+# Libraries: ibm-watsonx-ai, ibm-cloud-sdk-core, openai, certifi, requests
+
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 import requests
 import certifi
 
+# Helper function imports:
+from src.helpers.auth_helper_functions import get_wxo_token, build_wxo_call_meta
+#
 
 # ---------------------------------------------------------------------------
 # Client initialisation
@@ -56,21 +68,25 @@ def initialize_inference_client(
     base_url:   Full OpenAI-compatible base URL.
                 - rhai: built automatically from project + region if omitted.
                 - ica: defaults to https://api.nextgen-beta.ica.ibm.com/ica/v1/chat-models
-                       if omitted; override via ICA_BASE_URL env var.
+                        if omitted; override via ICA_BASE_URL env var.
     project:    RHAI project ID (rhai only).
     region:     RHAI region, default "us-east" (rhai only).
 
     wxo-specific
     ------------
     instance_url: WXO service-instance URL.
-    auth_type:    One of "ibm_iam" (default), "mcsp", "mcsp_v2", "cpd".
+    auth_type:    One of:
+                    "ibm_iam" (default) - IBM Cloud
+                    "cpd" - IBM watsonx orchestrate software (cloud pak for data),
+                    "mcsp",
+                    "mcsp_v2"
     is_local:     True when targeting a local Developer Edition server.
     api_version:  WXO API version, default "v1".
 
     Returns
     -------
-    - watsonx:       ibm_watsonx_ai.foundation_models.ModelInference (when model_id
-                     given) or ibm_watsonx_ai.APIClient (when model_id omitted).
+    - watsonx:       ibm_watsonx_ai.foundation_models.ModelInference (when model_id given)
+                    or ibm_watsonx_ai.APIClient (when model_id omitted).
     - openai / rhai / ica: openai.OpenAI client instance.
     - wxo:           dict {"base_url": str, "headers": dict} for REST calls.
     - None if required credentials are missing.
@@ -79,10 +95,15 @@ def initialize_inference_client(
 
     if provider == "ica":
         if not api_key:
-            print("initialize_inference_client (ica): api_key is required. Returning None.")
+            print(
+                "initialize_inference_client (ica): api_key is required. Returning None."
+            )
             return None
-        _base_url = base_url or "https://api.nextgen-beta.ica.ibm.com/ica/v1/chat-models"
+        _base_url = (
+            base_url or "https://api.nextgen-beta.ica.ibm.com/ica/v1/chat-models"
+        )
         from openai import OpenAI
+
         client = OpenAI(api_key=api_key, base_url=_base_url, **kwargs)
         print(f"ICA client initialised with base_url: {_base_url}")
         return client
@@ -148,8 +169,6 @@ def initialize_inference_client(
                 "required. Returning None."
             )
             return None
-
-        from src.helpers.auth_helper_functions import get_wxo_token, build_wxo_call_meta
 
         token = get_wxo_token(
             api_key=api_key,
@@ -349,12 +368,15 @@ def run_chat_inference(
             headers = client["headers"]
 
             if not agent_id:
-                raise ValueError(
-                    "run_chat_inference (wxo): agent_id is required"
-                )
+                raise ValueError("run_chat_inference (wxo): agent_id is required")
             # POST /v1/orchestrate/{agent_id}/chat/completions
             url = f"{base_url}/{agent_id}/chat/completions"
-            payload: Dict[str, Any] = {"messages": messages, "stream": False, **params, **kwargs}
+            payload: Dict[str, Any] = {
+                "messages": messages,
+                "stream": False,
+                **params,
+                **kwargs,
+            }
             response = requests.post(
                 url, headers=headers, json=payload, verify=certifi.where()
             )
@@ -364,6 +386,7 @@ def run_chat_inference(
         # OpenAI-compatible path (openai, rhai, ica)
         if model_id is None:
             raise ValueError(f"run_chat_inference ({provider}): model_id is required")
+
         extra = {k: v for k, v in params.items() if k != "model_id"}
         response = client.chat.completions.create(
             model=model_id,

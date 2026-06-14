@@ -108,3 +108,4 @@ src/utils/cpd_deploy.sh
 src/utils/cpd_deploy_validatorfunc.sh
 cp4d_connectors_generator_validator.py
 src/helpers/sql_alchemy_connector_helper_functions.py
+ted_valid_fields_test.py

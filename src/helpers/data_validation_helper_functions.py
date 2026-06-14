@@ -22,7 +22,7 @@ one of two interchangeable modes:
   - ``mode="remote"`` authenticates via IAM and POSTs to the deployment's
     ``/predictions`` endpoint.
   - ``mode="local"`` loads the validator's source file and calls its
-    module-level ``score`` callable in-process, with no network round-trip —
+    module-level ``score`` callable in-process, with no network round-trip -
     handy for development, offline use, or testing without a live deployment.
   - ``mode="auto"`` (the default) uses remote when both an ``endpoint_url`` and
     ``api_key`` are supplied, and falls back to local otherwise.
@@ -142,8 +142,7 @@ def _restore_order(value: Any, original: Any) -> Any:
         return reordered
     if isinstance(value, list) and isinstance(original, list):
         if len(value) == len(original) and all(
-            isinstance(v, dict) and isinstance(o, dict)
-            for v, o in zip(value, original)
+            isinstance(v, dict) and isinstance(o, dict) for v, o in zip(value, original)
         ):
             return [_restore_order(v, original[i]) for i, v in enumerate(value)]
         return value
@@ -272,9 +271,7 @@ def _load_local_score(
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Validator source not found: {path}")
 
-    spec = importlib.util.spec_from_file_location(
-        f"_local_validator_{validator}", path
-    )
+    spec = importlib.util.spec_from_file_location(f"_local_validator_{validator}", path)
     if spec is None or spec.loader is None:
         raise ValueError(f"Could not load validator module from: {path}")
     module = importlib.util.module_from_spec(spec)
@@ -282,9 +279,7 @@ def _load_local_score(
 
     score = getattr(module, "score", None)
     if not callable(score):
-        raise AttributeError(
-            f"Validator module at {path} exposes no callable 'score'."
-        )
+        raise AttributeError(f"Validator module at {path} exposes no callable 'score'.")
 
     _LOCAL_SCORE_CACHE[path] = score
     return score
@@ -418,9 +413,7 @@ def _dispatch_validation(
         return _score_local(score, input_record, result_key, order_reference)
 
     if not endpoint_url or not api_key:
-        raise ValueError(
-            "remote mode requires both 'endpoint_url' and 'api_key'."
-        )
+        raise ValueError("remote mode requires both 'endpoint_url' and 'api_key'.")
     return _score_remote(
         endpoint_url=endpoint_url,
         api_key=api_key,
