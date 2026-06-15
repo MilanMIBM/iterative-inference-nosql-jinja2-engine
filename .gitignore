@@ -109,3 +109,8 @@ src/utils/cpd_deploy_validatorfunc.sh
 cp4d_connectors_generator_validator.py
 src/helpers/sql_alchemy_connector_helper_functions.py
 ted_valid_fields_test.py
+code-engine-memgraph-deploytest.py
+src/helpers/image_helper_functions.py
+src/helpers/code_engine_app_helpers.py
+src/helpers/code_engine_dockerfile_helpers.py
+src/helpers/graphdb_conversion_helper_functions.py

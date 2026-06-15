@@ -16,8 +16,5 @@ pydantic-ai
 ibmcloudant
 pymongo
 astrapy
-pillow
-pillow-heif
-pyperf
 openai
 pycountry

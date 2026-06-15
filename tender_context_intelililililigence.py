@@ -50,7 +50,7 @@ def _():
         run_iterative_inference,
     )
 
-    from src.helpers.marimo_sortablekv import sortable_kv
+    from src.helpers.marimo_sortable_kv import sortable_kv
     from src.helpers.ted_ids import (
         ted_default_fields,
         ted_language_ids,

@@ -1178,7 +1178,7 @@ def _dedupe_cased(values: Any) -> List[Any]:
         return values
 
     best: Dict[str, Any] = {}  # casefolded key -> chosen value
-    order: List[str] = []      # casefolded keys, in first-seen order
+    order: List[str] = []  # casefolded keys, in first-seen order
     passthrough: List[Any] = []
 
     for item in values:
@@ -1319,8 +1319,10 @@ def render_template_from_dataframe(
     #   - `rows_raw` : each cell parsed but structure-preserved (dict/list/
     #                  scalar), for navigating nested data like `links`.
     if (
-        "rows" in referenced or "rows_raw" in referenced
-    ) and "rows" not in extra_slugs and "rows_raw" not in extra_slugs:
+        ("rows" in referenced or "rows_raw" in referenced)
+        and "rows" not in extra_slugs
+        and "rows_raw" not in extra_slugs
+    ):
         slug_by_column = {col: _slug(col) for col in df.columns}
 
         def _parse_cell(value):
@@ -1368,8 +1370,7 @@ def render_template_from_dataframe(
             continue
         # Resolve each output key's column by slug (like aggregated fields).
         resolved = {
-            key: columns_by_slug.get(_slug(col))
-            for key, col in key_to_column.items()
+            key: columns_by_slug.get(_slug(col)) for key, col in key_to_column.items()
         }
         resolved = {key: col for key, col in resolved.items() if col is not None}
         if not resolved:
@@ -1378,7 +1379,8 @@ def render_template_from_dataframe(
         # Identifier-like keys anchor a record but do not by themselves justify
         # emitting one: a row with only a notice id (no email/phone) is dropped.
         payload_keys = [
-            key for key in resolved
+            key
+            for key in resolved
             if not (key == "id" or key.endswith("-id") or key.endswith("_id"))
         ]
 
@@ -1525,28 +1527,52 @@ def initialize_mongodb_database(
     username: str,
     password: str,
     cert_path: Optional[str] = None,
+    mongodb_atlas: bool = False,
+    hostname: Optional[str] = None,
+    db_name: Optional[str] = None,
 ) -> Optional[MongoDatabase]:
     """Initialize MongoDB Database client; return None when required inputs are missing.
 
-    Builds the connection URI from discrete credentials matching the
-    ``_mongodb_ibm.env.TEMPLATE`` layout (MONGODB_ENDPOINT, MONGODB_USERNAME,
-    MONGODB_PASSWORD, MONGODB_CERT_PATH).
+    Supports two connection layouts selected via *mongodb_atlas*:
 
-    The *endpoint* value is expected to contain the full MongoDB URI
-    (including the database name in the path component), e.g.::
+    **IBM Cloud (default, ``mongodb_atlas=False``)** - matches the
+    ``_mongodb_ibm.env.TEMPLATE`` layout (MONGODB_ENDPOINT, MONGODB_USERNAME,
+    MONGODB_PASSWORD, MONGODB_CERT_PATH). The *endpoint* is expected to contain
+    the full MongoDB URI including the database name in the path component,
+    e.g.::
 
         mongodb://HOST:PORT/ibmclouddb?authSource=admin&replicaSet=replset&tls=true
 
     Username and password placeholders (``$USERNAME``, ``$PASSWORD``) in the
-    endpoint are replaced at runtime. If TLS is used, *cert_path* should
-    point to the PEM certificate file.
+    endpoint are replaced at runtime. If TLS is used, *cert_path* should point
+    to the PEM certificate file. The database is taken from the URI's default
+    database.
+
+    **MongoDB Atlas (``mongodb_atlas=True``)** - matches the Atlas SRV layout
+    (MONGODB_ENDPOINT, MONGODB_USERNAME, MONGODB_PASSWORD, MONGODB_DB,
+    MONGODB_HOSTNAME), e.g.::
+
+        mongodb+srv://$MONGODB_USERNAME:$MONGODB_PASSWORD@$MONGODB_HOSTNAME/?appName=$MONGODB_DB
+
+    The ``$MONGODB_USERNAME``, ``$MONGODB_PASSWORD``, ``$MONGODB_HOSTNAME`` and
+    ``$MONGODB_DB`` placeholders are replaced at runtime. TLS is negotiated
+    automatically by the ``mongodb+srv://`` scheme, so *cert_path* is ignored.
+    The Atlas URI carries no default database, so *db_name* must be supplied
+    to select the working database.
 
     Args:
-        endpoint: MongoDB connection URI (may contain ``$USERNAME`` /
-            ``$PASSWORD`` placeholders).
+        endpoint: MongoDB connection URI (with the placeholders described
+            above for the selected layout).
         username: MongoDB username.
         password: MongoDB password.
-        cert_path: Optional path to a TLS/SSL PEM certificate file.
+        cert_path: Optional path to a TLS/SSL PEM certificate file (IBM layout
+            only; ignored when *mongodb_atlas* is True).
+        mongodb_atlas: When True, use the Atlas SRV layout instead of the IBM
+            Cloud layout.
+        hostname: Atlas cluster hostname used to fill the ``$MONGODB_HOSTNAME``
+            placeholder (Atlas layout only).
+        db_name: Database name used to fill the ``$MONGODB_DB`` placeholder and
+            to select the working database (required for the Atlas layout).
 
     Returns:
         A ``pymongo.database.Database`` instance, or ``None`` when required
@@ -1554,6 +1580,20 @@ def initialize_mongodb_database(
     """
     if not endpoint or not username or not password:
         return None
+
+    if mongodb_atlas:
+        if not hostname or not db_name:
+            return None
+
+        connection_string = (
+            endpoint.replace("$MONGODB_USERNAME", username)
+            .replace("$MONGODB_PASSWORD", password)
+            .replace("$MONGODB_HOSTNAME", hostname)
+            .replace("$MONGODB_DB", db_name)
+        )
+
+        client = MongoClient(connection_string)
+        return client[db_name]
 
     connection_string = endpoint.replace("$USERNAME", username).replace(
         "$PASSWORD", password
@@ -1567,8 +1607,8 @@ def initialize_mongodb_database(
             client_kwargs["tlsCAFile"] = resolved_cert
 
     client = MongoClient(connection_string, **client_kwargs)
-    db_name = client.get_default_database().name
-    return client[db_name]
+    resolved_db_name = client.get_default_database().name
+    return client[resolved_db_name]
 
 
 def initialize_cloudant_database(

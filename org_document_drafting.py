@@ -29,7 +29,7 @@ def _():
     from src.helpers.marimo_widget_helper_functions import (
         records_to_dict,
     )
-    from src.helpers.marimo_sortablekv import sortable_kv
+    from src.helpers.marimo_sortable_kv import sortable_kv
     from src.utils.load_all_dotenv import (
         load_all_dotenv,
     )
@@ -160,10 +160,7 @@ def _(
         initialize_hcd_database(
             hcd_api_endpoint, hcd_api_username, hcd_api_password, hcd_keyspace
         )
-        if hcd_api_endpoint
-        and hcd_api_username
-        and hcd_api_password
-        and hcd_keyspace
+        if hcd_api_endpoint and hcd_api_username and hcd_api_password and hcd_keyspace
         else None
     )
     return (hcd,)

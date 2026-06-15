@@ -221,9 +221,7 @@ def data_validator_library():
                 last_err = e
                 continue
 
-        raise ValueError(
-            f"Could not resolve target '{dotted_path}': {last_err}"
-        )
+        raise ValueError(f"Could not resolve target '{dotted_path}': {last_err}")
 
     def describe_target(obj):
         """Human-readable kind for a resolved object (for logs)."""
@@ -313,8 +311,7 @@ def data_validator_library():
 
         # --- filter to accepted params, preserving config insertion order ---
         accepts_var_keyword = any(
-            p.kind == inspect.Parameter.VAR_KEYWORD
-            for p in sig.parameters.values()
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
         )
         valid_params = set(sig.parameters.keys())
         filtered_params = {}
@@ -346,9 +343,7 @@ def data_validator_library():
             filtered_params[param_name] = None
 
         # --- coerce types from explicit hints and/or annotations ---
-        filtered_params = coerce_params(
-            filtered_params, sig, type_mapping, config, log
-        )
+        filtered_params = coerce_params(filtered_params, sig, type_mapping, config, log)
 
         log("6/7", f"Final params: {filtered_params}")
 
@@ -395,7 +390,7 @@ def data_validator_library():
         }
 
         for param_name, current_val in list(filtered_params.items()):
-            # Never coerce booleans — preserve True/False as-is.
+            # Never coerce booleans - preserve True/False as-is.
             if isinstance(current_val, bool):
                 log("5/7", f"'{param_name}' is boolean, preserving as-is")
                 continue
@@ -408,13 +403,21 @@ def data_validator_library():
                     filtered_params[param_name] = [current_val]
                     log("5/7", f"'{param_name}' wrapped in list (hint)")
                 elif hint == "dict" and not isinstance(current_val, dict):
-                    log("5/7", f"'{param_name}' hinted dict but value is not; leaving as-is")
-                elif not isinstance(current_val, target_type) and current_val is not None:
+                    log(
+                        "5/7",
+                        f"'{param_name}' hinted dict but value is not; leaving as-is",
+                    )
+                elif (
+                    not isinstance(current_val, target_type) and current_val is not None
+                ):
                     try:
                         filtered_params[param_name] = target_type(current_val)
                         log("5/7", f"'{param_name}' cast to {hint} (hint)")
                     except (ValueError, TypeError):
-                        log("5/7", f"'{param_name}' could not cast to {hint}; leaving as-is")
+                        log(
+                            "5/7",
+                            f"'{param_name}' could not cast to {hint}; leaving as-is",
+                        )
                 continue
 
             # 2) Fall back to annotation-driven coercion (list/dict/str).
@@ -430,28 +433,32 @@ def data_validator_library():
             expects_dict = any(
                 h in ann_str for h in ["Dict", "dict", "Mapping", "mapping"]
             )
-            expects_str = any(
-                h in ann_str for h in ["'str'", "<class 'str'>", "str"]
-            )
+            expects_str = any(h in ann_str for h in ["'str'", "<class 'str'>", "str"])
 
             # Skip coercion if current type is already accepted by the annotation.
             if isinstance(current_val, dict) and (expects_dict or expects_list):
                 continue
-            if isinstance(current_val, (list, tuple)) and (expects_list or expects_dict):
+            if isinstance(current_val, (list, tuple)) and (
+                expects_list or expects_dict
+            ):
                 continue
             if isinstance(current_val, str) and expects_str:
                 continue
 
             if expects_list and not isinstance(current_val, (list, tuple)):
                 filtered_params[param_name] = [current_val]
-                log("5/7", f"'{param_name}' wrapped in list: {filtered_params[param_name]}")
+                log(
+                    "5/7",
+                    f"'{param_name}' wrapped in list: {filtered_params[param_name]}",
+                )
             elif (
-                expects_str
-                and isinstance(current_val, list)
-                and len(current_val) == 1
+                expects_str and isinstance(current_val, list) and len(current_val) == 1
             ):
                 filtered_params[param_name] = current_val[0]
-                log("5/7", f"'{param_name}' unwrapped from list: {filtered_params[param_name]}")
+                log(
+                    "5/7",
+                    f"'{param_name}' unwrapped from list: {filtered_params[param_name]}",
+                )
             elif expects_str and not isinstance(current_val, str):
                 filtered_params[param_name] = str(current_val)
                 log("5/7", f"'{param_name}' cast to str: {filtered_params[param_name]}")

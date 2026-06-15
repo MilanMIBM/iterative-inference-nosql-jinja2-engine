@@ -217,19 +217,35 @@ _CSS = """
 .sortable-kv-widget {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   max-width: 100%;
+  color-scheme: light dark;
+
+  /* CSS variables for theming (overridden in dark mode below) */
+  --skv-bg-container: #ffffff;
+  --skv-bg-item: #ffffff;
+  --skv-bg-hover: #f8f9fa;
+  --skv-bg-focus: #ffffff;
+  --skv-bg-button-hover: #e4e6ea;
+  --skv-bg-add-hover: #f4f5f7;
+  --skv-border-color: #e1e5e9;
+  --skv-border-dashed: #c1c7d0;
+  --skv-text-primary: #172b4d;
+  --skv-text-secondary: #6b778c;
+  --skv-text-button-hover: #42526e;
+  --skv-accent: #0052cc;
+  --skv-shadow: rgba(0, 0, 0, 0.1);
 }
 .sortable-kv-widget .kv-label {
   font-size: 13px;
   font-weight: 600;
-  color: #172b4d;
+  color: var(--skv-text-primary);
   margin-bottom: 6px;
 }
 .sortable-kv-widget .kv-container {
-  background: white;
-  border: 1px solid #e1e5e9;
+  background: var(--skv-bg-container);
+  border: 1px solid var(--skv-border-color);
   border-radius: 6px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px var(--skv-shadow);
 }
 .sortable-kv-widget .kv-row {
   position: relative;
@@ -237,8 +253,8 @@ _CSS = """
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: white;
-  border-bottom: 1px solid #e1e5e9;
+  background: var(--skv-bg-item);
+  border-bottom: 1px solid var(--skv-border-color);
   transition: background-color 0.15s ease, opacity 0.15s ease;
   cursor: grab;
 }
@@ -246,7 +262,7 @@ _CSS = """
   border-bottom: none;
 }
 .sortable-kv-widget .kv-row:hover {
-  background-color: #f8f9fa;
+  background-color: var(--skv-bg-hover);
 }
 .sortable-kv-widget .kv-row:hover .remove-button {
   opacity: 1;
@@ -268,7 +284,7 @@ _CSS = """
   border: none;
   background: transparent;
   cursor: grab;
-  color: #6b778c;
+  color: var(--skv-text-secondary);
   flex-shrink: 0;
 }
 .sortable-kv-widget .drag-handle:active {
@@ -282,7 +298,7 @@ _CSS = """
   flex: 1;
   font-size: 14px;
   font-family: inherit;
-  color: #172b4d;
+  color: var(--skv-text-primary);
   border: 1px solid transparent;
   border-radius: 3px;
   padding: 2px 6px;
@@ -293,16 +309,20 @@ _CSS = """
 }
 .sortable-kv-widget .kv-key:focus,
 .sortable-kv-widget .kv-value:focus {
-  border-color: #0052cc;
-  background: white;
+  border-color: var(--skv-accent);
+  background: var(--skv-bg-focus);
+}
+.sortable-kv-widget .kv-key::placeholder,
+.sortable-kv-widget .kv-value::placeholder {
+  color: var(--skv-text-secondary);
 }
 .sortable-kv-widget .kv-key.readonly,
 .sortable-kv-widget .kv-value.readonly {
   cursor: default;
-  color: #172b4d;
+  color: var(--skv-text-primary);
 }
 .sortable-kv-widget .kv-separator {
-  color: #6b778c;
+  color: var(--skv-text-secondary);
   font-size: 14px;
   flex-shrink: 0;
   user-select: none;
@@ -317,23 +337,23 @@ _CSS = """
   background: transparent;
   cursor: pointer;
   border-radius: 3px;
-  color: #6b778c;
+  color: var(--skv-text-secondary);
   flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.15s ease, background-color 0.15s ease;
 }
 .sortable-kv-widget .remove-button:hover {
-  background-color: #e4e6ea;
-  color: #42526e;
+  background-color: var(--skv-bg-button-hover);
+  color: var(--skv-text-button-hover);
 }
 .sortable-kv-widget .add-button {
   margin-top: 8px;
   padding: 5px 10px;
   font-size: 13px;
   font-family: inherit;
-  color: #0052cc;
+  color: var(--skv-accent);
   background: transparent;
-  border: 1px dashed #c1c7d0;
+  border: 1px dashed var(--skv-border-dashed);
   border-radius: 4px;
   cursor: pointer;
   width: 100%;
@@ -341,12 +361,30 @@ _CSS = """
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .sortable-kv-widget .add-button:hover {
-  background-color: #f4f5f7;
-  border-color: #0052cc;
+  background-color: var(--skv-bg-add-hover);
+  border-color: var(--skv-accent);
 }
 .sortable-kv-widget .drop-indicator {
-  background-color: #0052cc !important;
+  background-color: var(--skv-accent) !important;
   border-radius: 1px;
+}
+
+/* Dark mode: marimo toggles `.dark` (and some hosts `.dark-theme`) on an ancestor */
+.dark .sortable-kv-widget,
+.dark-theme .sortable-kv-widget {
+  --skv-bg-container: #1e1e1e;
+  --skv-bg-item: #2a2a2a;
+  --skv-bg-hover: #333333;
+  --skv-bg-focus: #333333;
+  --skv-bg-button-hover: #3a3a3a;
+  --skv-bg-add-hover: #333333;
+  --skv-border-color: #3a3a3a;
+  --skv-border-dashed: #4a4a4a;
+  --skv-text-primary: #e0e0e0;
+  --skv-text-secondary: #a0a0a0;
+  --skv-text-button-hover: #f0f0f0;
+  --skv-accent: #4d9fff;
+  --skv-shadow: rgba(0, 0, 0, 0.3);
 }
 """
 
@@ -413,6 +451,44 @@ class SortableKV(anywidget.AnyWidget):
         )
 
 
+def records_to_dict(records: Sequence[dict]) -> dict:
+    """Collapse a list of ``{"key", "value"}`` records into a ``{key: value}`` dict.
+
+    Later records win if two share the same key.
+    """
+    return {r.get("key", ""): r.get("value", "") for r in records}
+
+
+class _SortableKVElement(mo.ui.anywidget):
+    """``mo.ui.anywidget`` wrapper whose ``.value`` exposes only the records.
+
+    Plain ``mo.ui.anywidget`` returns the widget's *entire* trait state from
+    ``.value`` (``value``, ``addable``, ``removable``, ...). This subclass
+    narrows ``.value`` to just the ``value`` section - the list of
+    ``{"key", "value"}`` records - so ``.value`` reflects the data only.
+
+    When ``as_dict`` is True, ``.value`` is collapsed to a ``{key: value}``
+    dict via :func:`records_to_dict`, so ``.value.values()`` yields only the
+    value strings and ``.value.keys()`` only the keys.
+    """
+
+    def __init__(self, widget, *, as_dict: bool = False):
+        # Set before super().__init__ flips _initialized to True so the
+        # forwarding __setattr__ keeps it on the element, not the widget.
+        self._as_dict = as_dict
+        super().__init__(widget)
+
+    @property
+    def value(self):
+        records = super().value.get("value", [])
+        return records_to_dict(records) if self._as_dict else records
+
+    @value.setter
+    def value(self, value):
+        del value
+        raise RuntimeError("Setting the value of a UIElement is not allowed.")
+
+
 def sortable_kv(
     value: Sequence[dict],
     *,
@@ -423,9 +499,20 @@ def sortable_kv(
     label: str = "",
     key_placeholder: str = "key",
     value_placeholder: str = "value",
+    as_dict: bool = True,
     **kwargs,
 ) -> mo.ui.anywidget:
-    return mo.ui.anywidget(
+    """Build a sortable key/value list as a marimo UI element.
+
+    Args:
+        as_dict: When False ``.value`` returns the records list,
+            ``[{"key": str, "value": str}, ...]``. When True ``.value``
+            returns a ``{key: value}`` dict, so ``.value.values()`` gives
+            only the value strings.
+
+    See :class:`SortableKV` for the remaining arguments.
+    """
+    return _SortableKVElement(
         SortableKV(
             value,
             addable=addable,
@@ -436,5 +523,6 @@ def sortable_kv(
             key_placeholder=key_placeholder,
             value_placeholder=value_placeholder,
             **kwargs,
-        )
+        ),
+        as_dict=as_dict,
     )
