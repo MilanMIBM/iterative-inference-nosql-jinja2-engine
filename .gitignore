@@ -114,3 +114,4 @@ src/helpers/image_helper_functions.py
 src/helpers/code_engine_app_helpers.py
 src/helpers/code_engine_dockerfile_helpers.py
 src/helpers/graphdb_conversion_helper_functions.py
+code-engine-memgraph-deploytest.py
