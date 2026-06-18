@@ -25,6 +25,42 @@ ted_language_ids = {
     "Spanish": "spa",
     "Swedish": "swe",
 }
+
+ted_profiler_fields = [
+    "organisation-name-buyer",
+    "organisation-identifier-buyer",
+    "organisation-country-buyer",
+    "organisation-city-buyer",
+    "organisation-street-buyer",
+    "organisation-internet-address-buyer",
+    "organisation-email-buyer",
+    "organisation-tel-buyer",
+    "notice-identifier",
+    "notice-title",
+    "publication-number",
+    "description-proc",
+    "total-value",
+    "total-value-cur",
+    "result-value-notice",
+    "result-value-cur-notice",
+    "additional-information",
+    "additional-info-proc",
+    "contract-nature",
+    "contract-nature-main-proc",
+    "contract-nature-subtype",
+]
+
+main_nature_of_contract_search_tags = {
+    "Combined": "combined",
+    "Not applicable": "9",
+    "Not specified": "Z",
+    "Services": "services",
+    "Supplies": "supplies",
+    "Works": "works",
+}
+
+# ========================== OTHER TAGS
+
 ted_default_fields = [
     "notice-identifier",
     "publication-date",

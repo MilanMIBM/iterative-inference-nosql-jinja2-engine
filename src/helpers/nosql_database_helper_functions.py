@@ -391,11 +391,11 @@ def bulk_update_docs(
     For AstraDB, documents must have ``_id``.
 
     Args:
-        db_client: Initialized database client (CloudantV1 or AstraDB Database).
+        db_client: Initialized database client.
         db_name: Target database/collection name.
         docs: List of document dicts to update.
         batch_size: Number of documents per bulk operation. Defaults to 100.
-        provider: Optional explicit backend ("cloudant","astradb","mongodb").
+        provider: Optional explicit backend ("cloudant","astradb","hcd","mongodb").
 
     Returns:
         List of bulk operation response dicts.
@@ -551,6 +551,48 @@ def bulk_update_docs(
         ) from exc
 
 
+def strip_surrogates(text: str) -> str:
+    """Drop lone/unpaired UTF-16 surrogates from a string.
+
+    Such surrogates (e.g. from broken emoji like flag pairs) are valid Python
+    ``str`` but cannot be UTF-8 encoded, which crashes JSON serialization on
+    upload. Properly-paired emoji survive.
+    """
+    return text.encode("utf-8", "surrogatepass").decode("utf-8", "ignore")
+
+
+def clean_document(obj: Any) -> Any:
+    """Recursively strip whitespace, drop empty values, and remove lone
+    UTF-16 surrogates from dict keys and string values so the document is
+    safe to JSON-serialize and upload.
+    """
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            if k is None:
+                continue
+            key = strip_surrogates(str(k)).strip()
+            if key == "":
+                continue
+            cleaned_value = clean_document(v)
+            if cleaned_value in (None, "", [], {}):
+                continue
+            cleaned[key] = cleaned_value
+        return cleaned
+    elif isinstance(obj, list):
+        cleaned_list = []
+        for item in obj:
+            cleaned_item = clean_document(item)
+            if cleaned_item in (None, "", [], {}):
+                continue
+            cleaned_list.append(cleaned_item)
+        return cleaned_list
+    elif isinstance(obj, str):
+        return strip_surrogates(obj).strip()
+    else:
+        return obj
+
+
 def bulk_upload_docs(
     db_client,
     db_name: str,
@@ -562,11 +604,11 @@ def bulk_upload_docs(
     Upload documents to Cloudant or AstraDB using bulk operations.
 
     Args:
-        db_client: Initialized database client (CloudantV1 or AstraDB Database).
+        db_client: Initialized database client.
         db_name: Target database/collection name.
         docs: Documents - dict with 'results' key or direct list.
         batch_size: Number of documents per bulk operation. Defaults to 100.
-        provider: Optional explicit backend ("cloudant","astradb","mongodb").
+        provider: Optional explicit backend ("cloudant","astradb","hcd","mongodb").
 
     Returns:
         List of bulk operation responses.
@@ -925,10 +967,11 @@ def render_jinja2_templates(
     """
     env = Environment()
     env.globals["uuid4"] = lambda: str(uuid.uuid4())
-    env.filters["slugify"] = _slug
+    env.filters["slugify"] = _slugify
     env.filters["country_info"] = _country_info
     env.filters["dedupe_cased"] = _dedupe_cased
     env.filters["street_info"] = _street_info
+    env.filters["clean_text"] = _clean_text
 
     def extract_docs_list(input_docs) -> List[Dict]:
         """Extract a list of documents from various input formats."""
@@ -1119,8 +1162,28 @@ def _slug(name: str) -> str:
     Lowercases and collapses non-alphanumeric runs to a single underscore so a
     column like ``organisation-city-buyer`` and the Jinja2 variable
     ``organisation_city_buyer`` resolve to the same key (``organisation_city_buyer``).
+
+    ASCII-only by design: column and variable identifiers are ASCII, so any
+    non-ASCII run is collapsed. For human-readable values (e.g. org names) use
+    :func:`_slugify` instead, which preserves Unicode letters.
     """
     return re.sub(r"[^0-9a-z]+", "_", str(name).lower()).strip("_")
+
+
+def _slugify(value: str) -> str:
+    """UTF-8 aware slug for human-readable values (the ``slugify`` filter).
+
+    Unlike :func:`_slug` (used for ASCII column/variable matching), this
+    preserves Unicode letters and digits so accented alphabets are not eaten:
+    ``Registerenheten i Brønnøysund`` becomes ``registerenheten_i_brønnøysund``
+    rather than ``registerenheten_i_br_nn_ysund``. Runs of any other character
+    collapse to a single underscore and leading/trailing underscores are
+    stripped.
+    """
+    # \W matches any non-"word" character; with the default Unicode semantics
+    # for str patterns, "word" characters include Unicode letters and digits.
+    # casefold() lowercases more aggressively than lower() for Unicode (e.g. ß).
+    return re.sub(r"[\W]+", "_", str(value).casefold(), flags=re.UNICODE).strip("_")
 
 
 def _country_info(code: Any) -> Dict[str, Any]:
@@ -1162,6 +1225,23 @@ def _street_info(value: Any) -> Any:
     lookup). Exists as a named seam so the template can mark street fields and
     the parsing/enrichment can be added here later without touching templates.
     """
+    return value
+
+
+def _clean_text(value: Any) -> Any:
+    """Strip leading/trailing whitespace from string values.
+
+    Registered as the ``clean_text`` Jinja2 filter. A single string has its
+    surrounding whitespace removed (e.g. ``" Brussels"`` -> ``"Brussels"``);
+    a list/tuple is mapped element-wise (each string stripped, non-strings
+    passed through). Any other type is returned unchanged. Use this on
+    free-text fields (cities, streets, ...) *before* de-duplication so that
+    entries differing only by stray surrounding spaces collapse together.
+    """
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, tuple)):
+        return [_clean_text(item) for item in value]
     return value
 
 
@@ -1276,10 +1356,11 @@ def render_template_from_dataframe(
 
     env = Environment()
     env.globals["uuid4"] = lambda: str(uuid.uuid4())
-    env.filters["slugify"] = _slug
+    env.filters["slugify"] = _slugify
     env.filters["country_info"] = _country_info
     env.filters["dedupe_cased"] = _dedupe_cased
     env.filters["street_info"] = _street_info
+    env.filters["clean_text"] = _clean_text
 
     # Discover which variables the template actually references.
     referenced = meta.find_undeclared_variables(env.parse(source))

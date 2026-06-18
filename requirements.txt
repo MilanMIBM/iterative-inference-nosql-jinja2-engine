@@ -18,3 +18,5 @@ pymongo
 astrapy
 openai
 pycountry
+ftfy
+kreuzberg

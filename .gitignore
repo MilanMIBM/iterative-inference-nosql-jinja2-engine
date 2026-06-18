@@ -115,3 +115,6 @@ src/helpers/code_engine_app_helpers.py
 src/helpers/code_engine_dockerfile_helpers.py
 src/helpers/graphdb_conversion_helper_functions.py
 code-engine-memgraph-deploytest.py
+config/_datastaxhcd.env.T
+/examples/acc_examples
+tenders_electronic_daily_profile_generator_alt.py

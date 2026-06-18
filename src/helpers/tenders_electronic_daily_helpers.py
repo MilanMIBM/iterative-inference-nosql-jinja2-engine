@@ -1,7 +1,11 @@
-from typing import Optional, Dict, List, Any
+from typing import Callable, Optional, Dict, List, Any
 import pandas as pd
 import requests
+import threading
 import json
+import time
+import uuid
+import os
 
 
 def build_additional_fields(
@@ -53,6 +57,7 @@ def search_ted_notices(
     return_only_notices=True,
     use_custom_default_fields: bool = False,
     custom_default_fields: Optional[List[str]] = None,
+    extra_query_filters: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Search TED notices for a specific organization by name.
@@ -71,6 +76,11 @@ def search_ted_notices(
             notice-identifier) are always included regardless.
         custom_default_fields (List[str], optional): The replacement default field
             set to use when ``use_custom_default_fields`` is True.
+        extra_query_filters (List[str], optional): Additional TED expert-query
+            clauses to AND into the search filter. Each entry must already be
+            valid TED query syntax, e.g.
+            ``"contract-nature IN (services supplies combined)"`` or
+            ``'place-of-performance IN (NOR)'``.
 
     Returns:
         Dict containing the API response with notices
@@ -113,6 +123,11 @@ def search_ted_notices(
         elif end_date:
             end_fmt = end_date.replace("-", "")
             query_parts.append(f"publication-date<={end_fmt}")
+
+    # Append any caller-supplied filter clauses (already valid TED query syntax),
+    # e.g. "contract-nature IN (services supplies combined)".
+    if extra_query_filters:
+        query_parts.extend(f for f in extra_query_filters if f)
 
     # Join with AND
     expert_query = " AND ".join(query_parts)
@@ -760,3 +775,633 @@ def drop_columns_from_input(data, columns_to_drop):
 
     # Return original data if type not supported
     return data
+
+
+# Default fields used to build a buyer profile, mirroring the set used in the
+# tender_context_intelililililigence marimo notebook.
+DEFAULT_BUYER_PROFILE_FIELDS = [
+    "organisation-name-buyer",
+    "organisation-identifier-buyer",
+    "organisation-country-buyer",
+    "organisation-city-buyer",
+    "organisation-street-buyer",
+    "organisation-internet-address-buyer",
+    "organisation-email-buyer",
+    "organisation-tel-buyer",
+    "notice-identifier",
+    "notice-title",
+    "publication-number",
+    "description-proc",
+    "total-value",
+    "total-value-cur",
+    "result-value-notice",
+    "result-value-cur-notice",
+    "additional-information",
+    "additional-info-proc",
+]
+
+# Default Jinja2 template used to render a buyer profile document, matching the
+# template_with_coupled_fields used in the tender_context_intelililililigence
+# marimo notebook.
+DEFAULT_BUYER_PROFILE_TEMPLATE = os.getenv(
+    "JSON_DOCUMENT_TEMPLATE",
+    "examples/jinja2_templates/tender_org_profiler_with_coupled_fields_v2.yaml.j2",
+)
+
+
+def build_buyer_profile_context(
+    org_name: str,
+    *,
+    start_date: Optional[str] = None,
+    language: str = "eng",
+    preferred_file_format: str = "pdf",
+    profiling_period_to: Optional[str] = None,
+    extra_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build the per-org template context, mirroring the notebook's defaults.
+
+    Produces the same ``additional_context`` shape as the
+    ``tender_context_intelililililigence`` notebook
+    (``org_profile_name``/``language``/``preferred_file_format``/
+    ``profiling_period_from``/``profiling_period_to``). Anything passed via
+    ``extra_context`` overrides these defaults, so callers can add keys or
+    replace the defaults entirely.
+
+    Args:
+        org_name: The organization name (bound to ``org_profile_name``).
+        start_date: Search start date (bound to ``profiling_period_from``).
+        language: Default ``language`` value.
+        preferred_file_format: Default ``preferred_file_format`` value.
+        profiling_period_to: Period end; defaults to today (``YYYY-MM-DD``).
+        extra_context: Caller-supplied values that take precedence over the
+            defaults above.
+
+    Returns:
+        The merged context dict.
+    """
+    context = {
+        "org_profile_name": str(org_name),
+        "language": language,
+        "preferred_file_format": preferred_file_format,
+        "profiling_period_from": str(start_date),
+        "profiling_period_to": profiling_period_to or time.strftime("%Y-%m-%d"),
+    }
+    context.update(extra_context or {})
+    return context
+
+
+def build_buyer_profiles(
+    organization_names: List[str],
+    *,
+    render_template_from_dataframe: Callable[..., Dict[str, Any]],
+    template: str = DEFAULT_BUYER_PROFILE_TEMPLATE,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = 20,
+    buyer_profile_fields: Optional[List[str]] = None,
+    extra_query_filters: Optional[List[str]] = None,
+    language: Any = "eng",
+    preferred_file_format: str = "pdf",
+    extra_context: Optional[Dict[str, Any]] = None,
+    context_builder: Optional[
+        Callable[..., Dict[str, Any]]
+    ] = build_buyer_profile_context,
+    coupled_fields: Optional[Dict[str, Dict[str, str]]] = None,
+    is_path: bool = True,
+    search_fn: Callable[..., Any] = search_ted_notices,
+    show_progress: bool = True,
+    add_uuid: bool = False,
+    uuid_field: str = "uuid",
+) -> List[Dict[str, Any]]:
+    """Build a buyer profile document for each organization name.
+
+    For every name in ``organization_names`` this searches TED notices (using the
+    same fixed parameters for all orgs) and renders ``template`` against the
+    resulting dataframe, exactly as the ``tender_context_intelililililigence``
+    notebook does for a single org. Each result is collected as a
+    ``{"org_name": <name>, "language": <lang>, "buyer_profile_doc": <doc>}`` record.
+
+    If ``language`` is a list/tuple of more than one value, a separate profile is
+    produced for each org *and* each language (the org is searched once and the
+    template re-rendered per language), yielding one record per org x language.
+
+    Every input is passable but has a default applied inside: ``buyer_profile_fields``
+    falls back to ``DEFAULT_BUYER_PROFILE_FIELDS``, and the per-org template
+    context is produced by ``context_builder`` (defaults to
+    :func:`build_buyer_profile_context`) with ``extra_context`` merged in on top.
+
+    Args:
+        organization_names: Organization names to profile.
+        render_template_from_dataframe: The renderer (injected to avoid a circular
+            import); typically
+            ``src.helpers.nosql_database_helper_functions.render_template_from_dataframe``.
+        template: Path to a ``.j2`` template (or its source text if ``is_path``
+            is False). Defaults to ``DEFAULT_BUYER_PROFILE_TEMPLATE`` (the
+            coupled-fields v2 template).
+        start_date: Search start date (YYYY-MM-DD), shared across all orgs.
+        end_date: Search end date (YYYY-MM-DD), shared across all orgs.
+        limit: Max notices to retrieve per org.
+        buyer_profile_fields: Fields to request; defaults to
+            ``DEFAULT_BUYER_PROFILE_FIELDS``.
+        extra_query_filters: Additional TED expert-query clauses AND-ed into the
+            search filter for every org, e.g.
+            ``["contract-nature IN (services supplies combined)"]``. Each entry
+            must be valid TED query syntax. Passed through to ``search_fn``.
+        language: ``language`` value injected into the template context. May be a
+            single string or a list/tuple of language codes; multiple languages
+            fan out to one profile per org per language.
+        preferred_file_format: ``preferred_file_format`` value for the context.
+        extra_context: Additional fixed context merged into each render; these
+            keys take precedence over the context builder's defaults.
+        context_builder: Callable that builds the per-org context. Receives
+            ``org_name`` and the keyword args ``start_date``, ``language``,
+            ``preferred_file_format``, ``extra_context``. Defaults to
+            :func:`build_buyer_profile_context`.
+        coupled_fields: Optional row-aligned field mapping passed through to the
+            renderer.
+        is_path: Whether ``template`` is a path (True) or source text (False).
+        search_fn: The notice search function (defaults to ``search_ted_notices``).
+        show_progress: When True (default), display a ``mo.status.progress_bar``
+            that advances once per organization name, showing the current org in
+            its subtitle. Silently disabled if marimo is unavailable (e.g. when
+            called outside a marimo context).
+        add_uuid: When True, add a ``uuid_field`` key to each record holding a
+            freshly generated ``str(uuid.uuid4()).upper()`` (a distinct UUID per
+            document/record). Defaults to False.
+        uuid_field: Name of the record key to store the generated UUID under when
+            ``add_uuid`` is True. Defaults to ``"uuid"``.
+
+    Returns:
+        A list of ``{"org_name": str, "language": str, "buyer_profile_doc":
+        Dict[str, Any]}`` records, one per organization name (and per language
+        when several are given). Input order is preserved, org-major then
+        language. When ``add_uuid`` is True, each record also carries a
+        ``uuid_field`` key with an uppercased UUID4 string.
+    """
+    fields = buyer_profile_fields or DEFAULT_BUYER_PROFILE_FIELDS
+
+    # Normalize language into a list so single-value and multi-value callers
+    # share one code path (one profile rendered per language).
+    if isinstance(language, (list, tuple)):
+        languages = list(language)
+    else:
+        languages = [language]
+
+    # Resolve the progress bar lazily: marimo isn't a hard dependency of this
+    # module, so fall back to no progress UI when it's unavailable.
+    progress = None
+    if show_progress:
+        try:
+            import marimo as mo
+
+            progress = mo.status.progress_bar(
+                total=len(organization_names),
+                title="Building buyer profiles",
+                completion_title="Buyer profiles complete",
+                remove_on_exit=True,
+            )
+        except Exception:  # noqa: BLE001 - any import/context failure -> no bar
+            progress = None
+
+    results: List[Dict[str, Any]] = []
+
+    def _process(org_name: str, bar=None) -> None:
+        if bar is not None:
+            # increment=0 so this only sets the subtitle; the step is advanced
+            # once per org after processing.
+            bar.update(increment=0, subtitle=f"Profiling {org_name}")
+
+        # Search once per org; the language only affects the rendered context.
+        buyer_profile = search_fn(
+            organization_name=str(org_name),
+            start_date=start_date,
+            end_date=end_date,
+            limit=int(limit),
+            use_custom_default_fields=True,
+            custom_default_fields=fields,
+            additional_fields=[],
+            extra_query_filters=extra_query_filters,
+        )
+
+        for lang in languages:
+            additional_context = context_builder(
+                org_name,
+                start_date=start_date,
+                language=lang,
+                preferred_file_format=preferred_file_format,
+                extra_context=extra_context,
+            )
+
+            buyer_profile_doc = render_template_from_dataframe(
+                template=template,
+                df=buyer_profile,
+                is_path=is_path,
+                extra_context=additional_context,
+                coupled_fields=coupled_fields,
+            )
+
+            record = {
+                "org_name": str(org_name),
+                "language": lang,
+                "buyer_profile_doc": buyer_profile_doc,
+            }
+            if add_uuid:
+                record[uuid_field] = str(uuid.uuid4()).upper()
+            results.append(record)
+
+    if progress is not None:
+        with progress as bar:
+            for org_name in organization_names:
+                _process(org_name, bar=bar)
+                bar.update()  # advance one step per org
+    else:
+        for org_name in organization_names:
+            _process(org_name)
+
+    return results
+
+
+def extract_notice_documents(profile_documents):
+    all_notices = []
+    for profile in profile_documents:
+        context = profile.get("buyer_profile_doc", {}).get("context", {})
+        org_name = context.get("org_name", "")
+        profile_name = profile.get("buyer_profile_doc", {}).get("org_profile_name", "")
+
+        links_by_id = {}
+        formats_by_id = {}
+        for link in context.get("org_notice_links", []):
+            nid = link.get("notice_id")
+            if nid:
+                links_by_id.setdefault(nid, []).append(link.get("url"))
+                formats_by_id.setdefault(nid, []).append(link.get("format"))
+
+        values_by_id = {}
+        for val in context.get("notice_values", []):
+            nid = val.get("notice_id")
+            if nid:
+                values_by_id[nid] = val
+
+        all_ids = set(links_by_id.keys()) | set(values_by_id.keys())
+        for nid in all_ids:
+            val = values_by_id.get(nid, {})
+            urls = links_by_id.get(nid, [])
+            formats = formats_by_id.get(nid, [])
+            doc = {
+                "org_name": org_name,
+                "org_profile_name": profile_name,
+                "notice_id": nid,
+                "notice_title": val.get("notice_title", ""),
+                "download_urls": urls,
+                "download_formats": formats,
+            }
+            if "description_proc" in val:
+                doc["description_proc"] = val.get("description_proc")
+            all_notices.append(doc)
+    return all_notices
+
+
+# TED link ``format`` keys -> MIME type, for formats that the stdlib
+# ``mimetypes`` module does not (or unreliably) resolves on its own.
+TED_FORMAT_MIME_OVERRIDES: Dict[str, str] = {
+    "pdf": "application/pdf",
+    "html": "text/html",
+    "htm": "text/html",
+    "xhtml": "application/xhtml+xml",
+    "xml": "application/xml",
+    "txt": "text/plain",
+    "doc": "application/msword",
+    "docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+}
+
+
+def mime_type_for_format(fmt: Optional[str]) -> Optional[str]:
+    """
+    Map a TED ``download_formats`` entry to a MIME type.
+
+    Args:
+        fmt (str, optional): A TED format key such as ``"pdf"`` or ``"html"``.
+
+    Returns:
+        Optional[str]: The resolved MIME type, or ``None`` when ``fmt`` is
+        empty or cannot be resolved.
+    """
+    import mimetypes
+
+    if not fmt:
+        return None
+    key = fmt.strip().lower().lstrip(".")
+    if key in TED_FORMAT_MIME_OVERRIDES:
+        return TED_FORMAT_MIME_OVERRIDES[key]
+    return mimetypes.guess_type(f"file.{key}")[0]
+
+
+# Cross-call registry of extraction outcomes. ``fetch_and_extract_document``
+# appends to this on every call; ``print_extraction_summary`` reports it.
+EXTRACTION_LOG: Dict[str, List] = {"succeeded": [], "failed": []}
+
+
+def reset_extraction_log() -> None:
+    """Clear the recorded extraction outcomes (call before a new batch)."""
+    EXTRACTION_LOG["succeeded"].clear()
+    EXTRACTION_LOG["failed"].clear()
+
+
+def print_extraction_summary() -> Dict[str, List]:
+    """
+    Print and return a summary of all succeeded/failed extractions accumulated
+    since the last :func:`reset_extraction_log` (or process start).
+
+    Returns:
+        Dict[str, List]: ``{"succeeded": [(url, tries), ...],
+        "failed": [(url, tries, error), ...]}``.
+    """
+    succeeded = EXTRACTION_LOG["succeeded"]
+    failed = EXTRACTION_LOG["failed"]
+    total = len(succeeded) + len(failed)
+    print(
+        f"\n=== Extraction summary: {len(succeeded)}/{total} succeeded, "
+        f"{len(failed)} failed ==="
+    )
+    if succeeded:
+        print(f"Succeeded ({len(succeeded)}):")
+        for url, tries in succeeded:
+            print(f"  - {url} (after {tries} tries)")
+    if failed:
+        print(f"Failed ({len(failed)}):")
+        for url, tries, err in failed:
+            print(f"  - {url} (after {tries} tries): {err}")
+    return {"succeeded": list(succeeded), "failed": list(failed)}
+
+
+# Per-thread HTTP sessions: each async worker thread gets its own
+# ``requests.Session`` (isolated connection pool + cookie jar) so concurrent
+# downloads don't contend on shared client state.
+_thread_local = threading.local()
+
+
+def _get_session() -> requests.Session:
+    """Return this thread's ``requests.Session``, creating it on first use."""
+    session = getattr(_thread_local, "session", None)
+    if session is None:
+        session = requests.Session()
+        _thread_local.session = session
+    return session
+
+
+def fetch_and_extract_document(
+    url: str,
+    max_pages: Optional[int] = None,
+    debug: bool = False,
+    config: Optional[Any] = None,
+    mime_type: Optional[str] = None,
+    download_formats: Optional[Any] = None,
+    timeout: float = 60.0,
+    return_full: bool = False,
+    user_agent: Optional[str] = None,
+    retries: int = 6,
+    retry_wait: float = 1.0,
+    retry_backoff: float = 2.0,
+    retry_max_wait: float = 30.0,
+    api_key: Optional[str] = None,
+) -> str:
+    """
+    Download a file from ``url`` and extract its text content using Kreuzberg's
+    bytes-based loading, optionally limiting the result to the first
+    ``max_pages`` pages, then discard the downloaded bytes.
+
+    MIME type is resolved in this order of precedence:
+
+    1. An explicit ``mime_type`` argument, when provided.
+    2. The HTTP ``Content-Type`` response header.
+    3. Automatic detection from the downloaded bytes
+       (Kreuzberg's ``detect_mime_type_from_bytes``).
+    4. The ``download_formats`` candidates: each format (e.g. ``"pdf"``,
+       ``"html"``) is mapped to a MIME type and tried in order; the first one
+       that produces non-empty extracted content wins.
+
+    ``kreuzberg`` is imported lazily so the rest of this module can be used
+    without it installed.
+
+    Args:
+        url (str): The URL of the file to download and extract.
+        max_pages (int, optional): Maximum number of pages to include (for
+            paginated documents like PDFs). If ``None``, all pages are included.
+        debug (bool): When True, prints progress and the returned document.
+        config: Optional Kreuzberg ``ExtractionConfig`` controlling extraction
+            behaviour (OCR, chunking, page selection, etc.). When ``None``,
+            Kreuzberg's defaults are used. Note: when ``max_pages`` is set, a
+            page-extraction config is used and other custom config fields are
+            not applied.
+        mime_type (str, optional): Explicit MIME type. Takes precedence over
+            header/auto/format detection.
+        download_formats: A TED ``download_formats`` entry (or list of entries)
+            used as a fallback to pick a MIME type when automatic detection
+            fails. The first format that yields content is used.
+        timeout (float): HTTP request timeout in seconds.
+        return_full (boolean): Return full kreuzberg object and not just `result.contents`.
+        user_agent (str, optional): Value sent as the ``User-Agent`` request
+            header. When ``None`` (the default), no ``User-Agent`` header is
+            sent.
+        retries (int): Number of download+extract attempts before giving up.
+            TED's ``/pdf`` route intermittently returns a non-PDF/empty body
+            (which Kreuzberg then rejects, or which parses to empty content);
+            retrying re-downloads the file. Must be at least 1. Defaults to 6.
+        retry_wait (float): Base seconds to wait before the first retry.
+            Defaults to 1.0.
+        retry_backoff (float): Multiplier applied to the wait after each failed
+            attempt (exponential backoff). Defaults to 2.0, so waits grow
+            1s, 2s, 4s, 8s, ... to wait out throttling. Use 1.0 for a fixed
+            wait.
+        retry_max_wait (float): Upper bound on any single wait, in seconds.
+            Defaults to 30.0.
+        api_key (str, optional): TED API key (from the TED Developer Portal),
+            sent as an ``Authorization: Bearer`` header on the download.
+            Authenticated requests bypass the anonymous edge rate-gate that
+            otherwise returns ``202 Accepted`` with an empty body. Defaults to
+            the ``TED_API_KEY`` environment variable.
+
+    Returns:
+        str: The extracted text content.
+    """
+    import httpx
+    from kreuzberg import (
+        ExtractionConfig,
+        PageConfig,
+        detect_mime_type_from_bytes,
+        extract_bytes_sync,
+    )
+
+    # TED API key: explicit arg wins, else fall back to the env var. Sent as a
+    # Bearer token; authenticated requests are exempt from the anonymous edge
+    # rate-gate that otherwise returns ``202 Accepted`` with an empty body.
+    # api_key = api_key if api_key is not None else os.getenv("TED_API_KEY", "")
+    api_key = api_key
+
+    request_headers: dict[str, str] = {}
+    if user_agent:
+        request_headers["User-Agent"] = user_agent
+    if api_key:
+        request_headers["Authorization"] = f"Bearer {api_key}"
+
+    # When ``max_pages`` is requested we need Kreuzberg to return per-page
+    # content (``result.pages``); the extracted text itself contains no
+    # form-feed/page delimiters to split on. Force ``extract_pages`` on,
+    # preserving any other page settings the caller supplied.
+    active_config = config
+    if max_pages is not None:
+        existing_pages = getattr(config, "pages", None)
+        active_config = ExtractionConfig(
+            pages=PageConfig(
+                extract_pages=True,
+                insert_page_markers=getattr(
+                    existing_pages, "insert_page_markers", None
+                ),
+                marker_format=getattr(existing_pages, "marker_format", None),
+            )
+        )
+        if config is not None and debug:
+            print(
+                "  note: max_pages set -> using a page-extraction config; "
+                "other custom config fields are not applied"
+            )
+
+    def _download_and_extract() -> Any:
+        """One download + extract attempt. Raises on any failure."""
+        response = httpx.get(
+            url,
+            follow_redirects=True,
+            timeout=timeout,
+            headers=request_headers,
+        )
+        response.raise_for_status()
+        # TED's ``/pdf`` route renders on demand: a ``202 Accepted`` (often with
+        # an empty body) means "not ready yet, poll again". Treat it as a
+        # retriable failure so the backoff loop re-requests until it is ready.
+        if response.status_code == 202 or not response.content:
+            raise RuntimeError(
+                f"Document not ready (HTTP {response.status_code}, "
+                f"{len(response.content)} bytes) for {url}"
+            )
+        file_bytes = response.content
+
+        # Resolve the MIME type by precedence: explicit -> header -> auto-sniff.
+        header_mime = (
+            response.headers.get("content-type", "").split(";")[0].strip() or None
+        )
+        resolved_mime = mime_type or header_mime
+        if debug:
+            print(f"  header mime: {header_mime}")
+        if not resolved_mime:
+            try:
+                resolved_mime = detect_mime_type_from_bytes(file_bytes) or None
+            except Exception:
+                resolved_mime = None
+
+        if debug:
+            print(f"  resolved mime: {resolved_mime}")
+
+        # Build the ordered list of MIME types to attempt. The auto/header
+        # resolved type is tried first, then each ``download_formats``
+        # candidate as a fallback (de-duplicated, preserving order).
+        if isinstance(download_formats, str):
+            formats = [download_formats]
+        else:
+            formats = list(download_formats or [])
+        candidates: List[Optional[str]] = []
+        for mt in [resolved_mime, *(mime_type_for_format(f) for f in formats)]:
+            if mt and mt not in candidates:
+                candidates.append(mt)
+        if not candidates:
+            candidates.append(resolved_mime)  # may be None; Kreuzberg decides
+
+        try:
+            result = None
+            last_error: Optional[Exception] = None
+            for mt in candidates:
+                try:
+                    attempt = extract_bytes_sync(
+                        file_bytes, mime_type=mt, config=active_config
+                    )
+                except Exception as exc:  # try the next candidate format
+                    last_error = exc
+                    if debug:
+                        print(f"  extract failed for mime_type={mt!r}: {exc}")
+                    continue
+                # Keep the first attempt as a fallback result, but prefer the
+                # first candidate that actually yields non-empty content.
+                if result is None:
+                    result = attempt
+                if getattr(attempt, "content", "").strip():
+                    result = attempt
+                    if debug and mt != candidates[0]:
+                        print(f"  using fallback mime_type={mt!r}")
+                    break
+            if result is None:
+                raise last_error or RuntimeError(
+                    f"Could not extract document from {url}"
+                )
+            # An extraction that returns empty content is treated as a failure
+            # so the retry loop re-downloads (TED's throttle responses parse
+            # "successfully" but yield no text).
+            if not (getattr(result, "content", "") or "").strip():
+                raise last_error or RuntimeError(
+                    f"Extracted empty content from {url} "
+                    f"(candidates tried: {candidates})"
+                )
+            return result
+        finally:
+            del file_bytes
+
+    # Retry the whole download+extract: the bad-body failure only surfaces once
+    # Kreuzberg rejects the content, so a fresh download is what actually helps.
+    result = None
+    last_error = None
+    tries = 0
+    for attempt_num in range(1, max(1, retries) + 1):
+        tries = attempt_num
+        if debug:
+            print(f"Grabbing contents for {url}")
+        try:
+            result = _download_and_extract()
+            break
+        except Exception as exc:
+            last_error = exc
+            if attempt_num < max(1, retries):
+                # Exponential backoff (capped) so we wait out TED throttling
+                # before giving up rather than hammering it every second.
+                wait = min(
+                    retry_wait * (retry_backoff ** (attempt_num - 1)),
+                    retry_max_wait,
+                )
+                if debug:
+                    print(
+                        f"  attempt {attempt_num}/{retries} failed "
+                        f"({exc}); retrying in {wait:.1f}s"
+                    )
+                time.sleep(wait)
+    if result is None:
+        EXTRACTION_LOG["failed"].append((url, tries, str(last_error)))
+        raise last_error or RuntimeError(f"Could not extract document from {url}")
+    EXTRACTION_LOG["succeeded"].append((url, tries))
+    print(f"Succeeded extracting {url} after {tries} tries")
+
+    if max_pages is not None:
+        pages = getattr(result, "pages", None) or []
+        if pages:
+            output = "\f".join(page.get("content", "") for page in pages[:max_pages])
+        else:
+            # No per-page data available (e.g. non-paginated format); fall back
+            # to returning the full content unchanged.
+            output = result.content
+        if debug:
+            print(output)
+        return output
+
+    if debug:
+        print(result.content)
+
+    if return_full:
+        return result
+    else:
+        return result.content

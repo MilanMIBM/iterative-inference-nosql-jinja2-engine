@@ -1,0 +1,213 @@
+
+{#- ====================== BEGIN coupling logic ======================= -#}
+{#-
+  Coupling logic, hoisted to the top. `{% set %}` produces no output, so the
+  YAML structure below stays clean and just references the built lists.
+
+  TRUE per-record coupling: iterate `rows_raw` (one dict per source dataframe
+  row, structure preserved, bound by the engine when referenced) so every field
+  pulled for a record comes from the SAME row.
+-#}
+{#-
+  Language/format selection for notice links. The links cell is nested as
+  `format -> language-code -> url`. The template's `language` is lowercase
+  ISO-639 (e.g. 'eng'); the links dict is keyed UPPERCASE (e.g. 'ENG'), so we
+  uppercase to match. `preferred_file_format` selects which format block to
+  read and defaults to 'pdf'.
+-#}
+
+{#---- language/format key selection ----#}
+
+{%- set lang_key = (language | default('eng', true)) | upper %}
+{%- set fmt_key = preferred_file_format | default('pdf', true) %}
+
+{#---- accumulator initialisation ----#}
+
+{%- set contact_details = [] %}
+{%- set org_notice_links = [] %}
+{%- set streets_by_city = {} %}
+{%- set notice_values = [] %}
+{%- set total_value_sum = {} %}
+{%- set awarded_value_sum = {} %}
+
+{#---- per-record coupling loop over rows_raw ----#}
+
+{%- for row in rows_raw | default([], true) %}
+  {%- set email = (row['organisation-email-buyer'] | default([], true) | first) %}
+  {%- set phone = (row['organisation-tel-buyer'] | default([], true) | first) %}
+  {%- set notice_id = row['notice-identifier'] %}
+  {%- set desc_lang = (language | default('eng', true)) %}
+  {%- set desc_block = row['description-proc'] | default({}, true) %}
+  {%- set notice_description = desc_block.get(desc_lang) or desc_block.get('eng') %}
+  {%- set title_block = row['notice-title'] | default({}, true) %}
+  {%- set notice_title = title_block.get(desc_lang) or title_block.get('eng') %}
+  {%- set pub_nr = row['publication-number'] %}
+
+  {#---- total values for THIS notice, coupled to its notice-id ----#}
+
+  {%- set tv_cell = row['total-value'] %}
+  {%- set total_value = (tv_cell | first if tv_cell else none) if (tv_cell is sequence and tv_cell is not string) else tv_cell %}
+  {%- set tvc_cell = row['total-value-cur'] %}
+  {%- set total_value_cur = (tvc_cell | first if tvc_cell else none) if (tvc_cell is sequence and tvc_cell is not string) else tvc_cell %}
+  {%- if total_value is not none and total_value is not undefined and total_value != '' %}
+    {%- set notice_value = {
+          "notice-id": notice_id or none,
+          "publication_number": pub_nr,
+          "total-value": total_value,
+          "total-value-cur": total_value_cur or none,
+        } %}
+    {%- if notice_title %}
+      {%- set _ = notice_value.update({"notice-title": notice_title}) %}
+    {%- endif %}
+    {%- if notice_description %}
+      {%- set _ = notice_value.update({"description-proc": notice_description}) %}
+    {%- endif %}
+    {%- set _ = notice_values.append(notice_value) %}
+    {#---- accumulate org-level sums, keyed by currency ----#}
+    {%- set cur_key = total_value_cur or 'UNSPECIFIED' %}
+    {%- if cur_key not in total_value_sum %}
+      {%- set _ = total_value_sum.update({cur_key: 0}) %}
+    {%- endif %}
+    {%- set _ = total_value_sum.update({cur_key: total_value_sum[cur_key] + (total_value | float)}) %}
+  {%- endif %}
+
+  {#---- awarded (result) value for THIS notice, summed org-wide by currency ----#}
+
+  {%- set av_cell = row['result-value-notice'] %}
+  {%- set awarded_value = (av_cell | first if av_cell else none) if (av_cell is sequence and av_cell is not string) else av_cell %}
+  {%- set avc_cell = row['result-value-cur-notice'] %}
+  {%- set awarded_value_cur = (avc_cell | first if avc_cell else none) if (avc_cell is sequence and avc_cell is not string) else avc_cell %}
+  {%- if awarded_value is not none and awarded_value is not undefined and awarded_value != '' %}
+    {%- set acur_key = awarded_value_cur or 'UNSPECIFIED' %}
+    {%- if acur_key not in awarded_value_sum %}
+      {%- set _ = awarded_value_sum.update({acur_key: 0}) %}
+    {%- endif %}
+    {%- set _ = awarded_value_sum.update({acur_key: awarded_value_sum[acur_key] + (awarded_value | float)}) %}
+  {%- endif %}
+
+  {#---- streets keyed by the city from the SAME row (city -> [streets]) ----#}
+
+  {%- for city in (row['organisation-city-buyer'] | default([], true) | clean_text) %}
+    {%- if city not in streets_by_city %}
+      {%- set _ = streets_by_city.update({city: []}) %}
+    {%- endif %}
+    {%- for street in (row['organisation-street-buyer'] | default([], true) | clean_text) %}
+      {%- set _ = streets_by_city[city].append(street | street_info) %}
+    {%- endfor %}
+  {%- endfor %}
+
+  {#---- contact details: email + phone coupled to this row's notice-id ----#}
+
+  {%- if email or phone %}
+    {%- set _ = contact_details.append({
+          "email": email or none,
+          "notice-id": notice_id or none,
+          "phone": phone or none,
+        }) %}
+  {%- endif %}
+
+  {#---- notice link: pick links[fmt_key][lang_key] for THIS row ----#}
+
+  {%- set link_block = (row['links'] | default({}, true)).get(fmt_key, {}) %}
+  {%- set url = link_block.get(lang_key) %}
+  {%- if url %}
+    {%- set notice_link = {
+          "format": fmt_key,
+          "language": lang_key,
+          "notice-id": notice_id or none,
+          "publication_number": pub_nr,
+          "url": url,
+        } %}
+    {%- set _ = org_notice_links.append(notice_link) %}
+  {%- endif %}
+{%- endfor %}
+
+{#- ======================= END coupling logic ======================== -#}
+
+
+
+{#- ~~~~~~~~~~~~~~~~~~~~~~~~~~ Yaml defined Document Structure ~~~~~~~~~~~~~~~~~~~~~~~~~~ -#}
+language: {{ language | default('eng') }}
+preferred_file_format: {{ preferred_file_format | default('pdf') }}
+org_profile_name: {{ org_profile_name | slugify }}
+context_record_id: {{ identifier | default(uuid4(), true) }}
+profiling_period_between:
+  profiling_period_from: {{ profiling_period_from | default(none, true) | tojson }}
+  profiling_period_to: {{ profiling_period_to | default(none, true) | tojson }}
+profiled_notices_num: {{ rows_raw | default([], true) | length }}
+context:
+{%- if total_value_sum %}
+  total_value_sum:
+  {%- for cur, amount in total_value_sum.items() %}
+    {{ cur | tojson }}: {{ amount | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if awarded_value_sum %}
+  total_awarded_value_sum:
+  {%- for cur, amount in awarded_value_sum.items() %}
+    {{ cur | tojson }}: {{ amount | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if org_profile_name %}
+  org_name: {{ org_profile_name }}
+{%- endif %}
+{%- if organisation_country_buyer %}
+  org_countries:
+  {%- for item in organisation_country_buyer %}
+    - {{ item | country_info | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if organisation_city_buyer %}
+  org_cities:
+  {%- for item in organisation_city_buyer | clean_text | dedupe_cased %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if streets_by_city %}
+  org_streets:
+  {%- for city, streets in streets_by_city.items() %}
+    {{ city | tojson }}: {{ streets | dedupe_cased | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if organisation_internet_address_buyer %}
+  webpages:
+  {%- for item in organisation_internet_address_buyer %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if contact_details %}
+  contact_details:
+  {%- for item in contact_details %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if org_notice_links %}
+  org_notice_links:
+  {%- for item in org_notice_links %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{%- if notice_values %}
+  notice_values:
+  {%- for item in notice_values %}
+    - {{ item | tojson }}
+  {%- endfor %}
+{%- endif %}
+{#- ~~~~~~~~~~~~~~~~~~~~~~~~~~ END OF STRUCTURE SECTION ~~~~~~~~~~~~~~~~~~~~~~~~~~ -#}
+
+
+{#-
+  Self-contained variant of tender_org_profiler that builds `contact_details`
+  *inside the template*, so no `coupled_fields=` argument is needed at the call
+  site -- it works with render_template_from_dataframe as-is.
+
+  How the engine binds data: the aggregated column variables (e.g.
+  organisation_city_buyer) are flattened across ALL rows and de-duplicated
+  independently, so they cannot keep a record's fields together. To get TRUE
+  per-record coupling this template instead references `rows`, which the engine
+  binds to one dict per source dataframe row (each cell a flat list, keyed by
+  both the original column name and its slug). The coupling block at the top
+  walks `rows` so each email stays with the phone and notice id from the SAME
+  row -- equivalent to the Python `coupled_fields=` path, but driven entirely
+  from the template.
+-#}

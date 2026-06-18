@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.8"
+__generated_with = "0.23.9"
 app = marimo.App(width="full")
 
 with app.setup:
@@ -86,6 +86,50 @@ def _():
 
 
 @app.cell
+def _(active_db_provider):
+    context_directory_name_input = mo.ui.text(
+        label="**Destination Database/Collection Name**",
+        placeholder="Write a lowercase name with either - or _ instead of spaces",
+        value=(
+            "organizational-profiles"
+            if active_db_provider == "cloudant"
+            else "organizational_profiles"
+        ),
+        max_length=256,
+        full_width=True,
+    )
+    return (context_directory_name_input,)
+
+
+@app.cell
+def _(context_directory_name_input):
+    context_directory_name = (
+        context_directory_name_input.value.replace(" ", "_").lower()
+        if context_directory_name_input.value
+        else "organizational_profiles"
+    )
+    print(context_directory_name)
+    return (context_directory_name,)
+
+
+@app.cell
+def _(context_directory_name, db_provider):
+    db_context_directory = (
+        context_directory_name.replace("_", "-")
+        if db_provider.value == "cloudant"
+        else context_directory_name
+    )
+    return (db_context_directory,)
+
+
+@app.cell
+def _(db_context_directory):
+    db_context_directory_drilldown = f"{db_context_directory}_details"
+    print(db_context_directory_drilldown)
+    return (db_context_directory_drilldown,)
+
+
+@app.cell
 def _(db_provider):
     db_org_context = (
         "organization_context".replace("_", "-")
@@ -153,7 +197,10 @@ def _(
         initialize_hcd_database(
             hcd_api_endpoint, hcd_api_username, hcd_api_password, hcd_keyspace
         )
-        if hcd_api_endpoint and hcd_api_username and hcd_api_password and hcd_keyspace
+        if hcd_api_endpoint
+        and hcd_api_username
+        and hcd_api_password
+        and hcd_keyspace
         else None
     )
     return (hcd,)
@@ -181,7 +228,7 @@ def _(
 def _():
     db_provider = mo.ui.dropdown(
         ["cloudant", "astradb", "hcd", "mongodb"],
-        value="cloudant",
+        value="hcd",
         allow_select_none=False,
         label="**Select Context Database Backend:**",
         full_width=False,
@@ -226,6 +273,8 @@ def _(
     active_db_client,
     active_db_provider,
     check_database_status,
+    db_context_directory,
+    db_context_directory_drilldown,
     db_messages,
     db_model_params,
     db_org_context,
@@ -240,6 +289,8 @@ def _(
                     db_model_params,
                     db_org_context,
                     db_system_templates,
+                    db_context_directory,
+                    db_context_directory_drilldown,
                 ],
                 active_db_client,
                 active_db_provider,
@@ -270,6 +321,8 @@ def _(
     active_db_client,
     active_db_provider,
     check_database_status,
+    db_context_directory,
+    db_context_directory_drilldown,
     db_messages,
     db_model_params,
     db_org_context,
@@ -285,6 +338,8 @@ def _(
                     db_model_params,
                     db_org_context,
                     db_system_templates,
+                    db_context_directory,
+                    db_context_directory_drilldown,
                 ],
                 active_db_client,
                 active_db_provider,
@@ -300,6 +355,8 @@ def _(
                         db_model_params,
                         db_org_context,
                         db_system_templates,
+                        db_context_directory,
+                        db_context_directory_drilldown,
                     ],
                     active_db_client,
                     active_db_provider,
@@ -321,7 +378,9 @@ def _(active_db_provider, db_validation_df):
             show_download=False,
             selection=None,
             label=f"Selected provider: **{active_db_provider}**",
-            text_justify_columns={col: "center" for col in db_validation_df.columns},
+            text_justify_columns={
+                col: "center" for col in db_validation_df.columns
+            },
         )
         if db_validation_df is not None
         else mo.ui.table([{}])
@@ -394,6 +453,81 @@ def _(db_messages, db_model_params, db_org_context, db_system_templates):
         db_system_templates: ["examples/json_documents/system-templates"],
     }
     return (baseline_file_templates,)
+
+
+@app.cell(hide_code=True)
+def _():
+    # --- Marimo NoSQL Db doc viewer widget
+    return
+
+
+@app.cell
+def _():
+    collection_name_keys = {
+        "generation_context": "iteration_id",
+        "model_parameters": "parameter_set_name",
+        "organization_context": "org_context.client_name",
+        "system_templates": "name",
+    }
+    return (collection_name_keys,)
+
+
+@app.cell
+def _():
+    from src.helpers.marimo_nosql_docviewer_with_utils import nosql_doc_browser
+
+    return (nosql_doc_browser,)
+
+
+@app.cell
+def _(active_db_client, collection_name_keys, db_provider, nosql_doc_browser):
+    json_doc_browser = nosql_doc_browser(
+        db_client=active_db_client,
+        provider=db_provider.value,
+        name_key=collection_name_keys,
+        name_mode="append",
+        label="Browse JSON documents",
+        multiselect=True,
+        limit=200,
+    )
+    return (json_doc_browser,)
+
+
+@app.cell
+def _(json_doc_browser):
+    json_doc_browser
+    return
+
+
+@app.cell
+def _():
+    from src.helpers.marimo_floating_card_view import floating_card_view
+
+    return (floating_card_view,)
+
+
+@app.cell
+def _(json_doc_browser):
+    dc_view = json_doc_browser.value
+    return (dc_view,)
+
+
+@app.cell
+def _(dc_view, floating_card_view):
+    floating_cards = floating_card_view(
+        items=dc_view,
+        multiselect=False,
+        selectable=False,
+        max_tilt=55.0,
+    )
+    floating_cards
+    return
+
+
+@app.cell
+def _(context_directory_name_input):
+    context_directory_name_input
+    return
 
 
 if __name__ == "__main__":

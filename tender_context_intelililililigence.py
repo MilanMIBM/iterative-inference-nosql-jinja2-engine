@@ -309,7 +309,7 @@ def _(search_results, search_results_filtered, wrap_columns):
             else None
         )
 
-    tender_table
+    # tender_table
     return
 
 
@@ -344,10 +344,21 @@ def _():
         "organisation-email-buyer",
         "organisation-tel-buyer",
         "notice-identifier",
+        "notice-title",
         "publication-number",
         "description-proc",
+        "total-value",
+        "total-value-cur",
+        "result-value-notice",
+        "result-value-cur-notice",
+        "additional-information",
+        "additional-info-proc",
     ]
+    return (buyer_profile_fields,)
 
+
+@app.cell
+def _():
     buyer_financial_profile_fields = [
         "BT-24-Procedure",
         "description-proc",
@@ -361,17 +372,14 @@ def _():
         "TV",
         "TVL",
     ]
-    return buyer_financial_profile_fields, buyer_profile_fields
+    return
 
 
 @app.cell
 def _(
-    buyer_financial_profile_fields,
     buyer_profile_fields,
-    filter_notice_titles,
     get_profile,
     search_ted_notices,
-    ted_languages,
     ted_search_from_date,
     ted_search_max_items,
     ted_search_target_org,
@@ -386,19 +394,19 @@ def _(
             additional_fields=[],
         )
 
-        buyer_financial_profile = search_ted_notices(
-            organization_name=str(ted_search_target_org.value),
-            start_date=str(ted_search_from_date.value),
-            limit=int(ted_search_max_items.value),
-            use_custom_default_fields=True,
-            custom_default_fields=buyer_financial_profile_fields,
-            additional_fields=[],
-        )
-        buyer_financial_profile = filter_notice_titles(
-            buyer_financial_profile,
-            ted_languages.value,
-            extract_text_only=True,
-        )
+        # buyer_financial_profile = search_ted_notices(
+        #     organization_name=str(ted_search_target_org.value),
+        #     start_date=str(ted_search_from_date.value),
+        #     limit=int(ted_search_max_items.value),
+        #     use_custom_default_fields=True,
+        #     custom_default_fields=buyer_financial_profile_fields,
+        #     additional_fields=[],
+        # )
+        # buyer_financial_profile = filter_notice_titles(
+        #     buyer_financial_profile,
+        #     ted_languages.value,
+        #     extract_text_only=True,
+        # )
         # buyer_profile_filtered = filter_notice_titles(
         #     buyer_profile,
         #     ted_languages.value,
@@ -412,17 +420,17 @@ def _(
         # buyer_profile_wrap_columns = list(buyer_profile_filtered)
     else:
         buyer_profile = buyer_financial_profile = None
-    return buyer_financial_profile, buyer_profile
+    return (buyer_profile,)
 
 
 @app.cell
-def _(buyer_financial_profile):
-    mo.ui.table(
-        buyer_financial_profile,
-        wrapped_columns=["notice-title"],
-        page_size=5,
-        freeze_columns_left=["notice-title", "total-value"],
-    ) if buyer_financial_profile is not None else None
+def _():
+    # mo.ui.table(
+    #     buyer_financial_profile,
+    #     wrapped_columns=["notice-title"],
+    #     page_size=5,
+    #     freeze_columns_left=["notice-title", "total-value"],
+    # ) if buyer_financial_profile is not None else None
     return
 
 
@@ -489,8 +497,9 @@ def _(
     }
     print(additional_context)
     # template = "examples/jinja2_templates/tender_org_profiler.yaml.j2"
-    template_with_coupled_fields = (
-        "examples/jinja2_templates/tender_org_profiler_with_coupled_fields.yaml.j2"
+    template_with_coupled_fields = os.getenv(
+        "JSON_DOCUMENT_TEMPLATE",
+        "examples/jinja2_templates/tender_org_profiler_with_coupled_fields_v3.yaml.j2",
     )
 
     buyer_profile_doc = (
@@ -503,15 +512,6 @@ def _(
         else {}
     )
     buyer_profile_doc
-    return
-
-
-@app.cell
-def _():
-    mo.md(r"""
-    /// warning | Note to self - What to add/change
-    ### Add a total value addition to notices in their own section with their own descriptions ***(move "description-proc" there)***, also add a sum value of all total values ***("total-value")*** of tenders at the top of all the org context, as well as total awareded value, and currencies ***("total-value-cur")***
-    """)
     return
 
 
