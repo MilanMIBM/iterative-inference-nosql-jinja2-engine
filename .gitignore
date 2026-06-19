@@ -118,3 +118,7 @@ code-engine-memgraph-deploytest.py
 config/_datastaxhcd.env.T
 /examples/acc_examples
 tenders_electronic_daily_profile_generator_alt.py
+marimo_mermaid_test.py
+tenders_electronic_daily_helpers_backup.py
+planning/ted_notice_download_refactor_plan.md
+document_fetch_optimization.py

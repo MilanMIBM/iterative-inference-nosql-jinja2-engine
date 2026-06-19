@@ -1021,6 +1021,46 @@ def build_buyer_profiles(
     return results
 
 
+# def extract_notice_documents(profile_documents):
+#     all_notices = []
+#     for profile in profile_documents:
+#         context = profile.get("buyer_profile_doc", {}).get("context", {})
+#         org_name = context.get("org_name", "")
+#         profile_name = profile.get("buyer_profile_doc", {}).get("org_profile_name", "")
+
+#         links_by_id = {}
+#         formats_by_id = {}
+#         for link in context.get("org_notice_links", []):
+#             nid = link.get("notice_id")
+#             if nid:
+#                 links_by_id.setdefault(nid, []).append(link.get("url"))
+#                 formats_by_id.setdefault(nid, []).append(link.get("format"))
+
+#         values_by_id = {}
+#         for val in context.get("notice_values", []):
+#             nid = val.get("notice_id")
+#             if nid:
+#                 values_by_id[nid] = val
+
+#         all_ids = set(links_by_id.keys()) | set(values_by_id.keys())
+#         for nid in all_ids:
+#             val = values_by_id.get(nid, {})
+#             urls = links_by_id.get(nid, [])
+#             formats = formats_by_id.get(nid, [])
+#             doc = {
+#                 "org_name": org_name,
+#                 "org_profile_name": profile_name,
+#                 "notice_id": nid,
+#                 "notice_title": val.get("notice_title", ""),
+#                 "download_urls": urls,
+#                 "download_formats": formats,
+#             }
+#             if "description_proc" in val:
+#                 doc["description_proc"] = val.get("description_proc")
+#             all_notices.append(doc)
+#     return all_notices
+
+
 def extract_notice_documents(profile_documents):
     all_notices = []
     for profile in profile_documents:
@@ -1030,11 +1070,13 @@ def extract_notice_documents(profile_documents):
 
         links_by_id = {}
         formats_by_id = {}
+        pubnum_by_id = {}
         for link in context.get("org_notice_links", []):
             nid = link.get("notice_id")
             if nid:
                 links_by_id.setdefault(nid, []).append(link.get("url"))
                 formats_by_id.setdefault(nid, []).append(link.get("format"))
+                pubnum_by_id.setdefault(nid, link.get("publication_number"))
 
         values_by_id = {}
         for val in context.get("notice_values", []):
@@ -1051,6 +1093,7 @@ def extract_notice_documents(profile_documents):
                 "org_name": org_name,
                 "org_profile_name": profile_name,
                 "notice_id": nid,
+                "publication_number": pubnum_by_id.get(nid, ""),
                 "notice_title": val.get("notice_title", ""),
                 "download_urls": urls,
                 "download_formats": formats,
@@ -1405,3 +1448,171 @@ def fetch_and_extract_document(
         return result
     else:
         return result.content
+
+
+def fetch_and_extract_notice(
+    notices: Any,
+    direct: bool = False,
+    fmt: str = "pdf",
+    preferred_langs: tuple = ("ENG",),
+    page_size: int = 100,
+    max_pages: Optional[int] = None,
+    config: Optional[Any] = None,
+    timeout: float = 60.0,
+    return_full: bool = False,
+    user_agent: Optional[str] = None,
+    api_key: Optional[str] = None,
+    retries: int = 6,
+    retry_wait: float = 1.0,
+    retry_backoff: float = 2.0,
+    retry_max_wait: float = 30.0,
+    debug: bool = False,
+) -> Any:
+    """
+    Download TED notices straight from the API v3 document endpoint and extract
+    their text - returning the extracted content (or the full Kreuzberg result),
+    not mutated document dicts.
+
+    This is the notice-oriented counterpart to ``fetch_and_extract_document``:
+    the caller passes a TED publication number instead of a pre-resolved URL.
+
+    Two resolution modes:
+
+    * ``direct=True`` (default): the download URL is built deterministically as
+      ``https://api.ted.europa.eu/v3/notices/{publication_number}/{fmt}`` - no
+      Search API round-trip. Pass an ``api_key`` (Bearer token); authenticated
+      requests bypass the anonymous edge rate-gate that otherwise returns
+      ``202 Accepted`` with an empty body.
+    * ``direct=False``: links are resolved through the public Search API in
+      batches, preferring ``htmlDirect`` > ``html`` > ``pdf`` and the given
+      ``preferred_langs`` (no key needed).
+
+    Either way, each resolved URL is handed to ``fetch_and_extract_document``,
+    which owns the polling/backoff and Kreuzberg extraction.
+
+    Accepts either a single notice or a list of notices, where each notice is
+    either a publication-number string or a dict containing a
+    ``publication_number`` key. A scalar input yields a scalar result; a list
+    input yields a list of results, positionally aligned with the input (an
+    entry whose link cannot be resolved becomes ``None``).
+
+    Args:
+        notices: A publication-number string, a dict with a
+            ``publication_number`` key, or a list of either.
+        direct (bool): When True, build the API v3 document URL directly from
+            each publication number instead of querying the Search API.
+        fmt (str): Document format to request when ``direct=True`` (e.g.
+            ``"pdf"``, ``"xml"``, ``"html"``). Defaults to ``"pdf"``.
+        preferred_langs (tuple): Language codes to prefer when a format has
+            multiple language variants (Search API mode only). Defaults to
+            ``("ENG",)``.
+        page_size (int): Batch size for the Search API link-resolution lookup
+            (Search API mode only).
+        max_pages (int, optional): Maximum number of pages to include for
+            paginated documents. ``None`` includes all pages.
+        config: Optional Kreuzberg ``ExtractionConfig`` (see
+            ``fetch_and_extract_document``).
+        timeout (float): HTTP request timeout in seconds.
+        return_full (bool): Return the full Kreuzberg result instead of
+            ``result.content``.
+        user_agent (str, optional): ``User-Agent`` header for the download.
+        api_key (str, optional): TED API key, sent as a Bearer token on the
+            download to bypass the anonymous edge rate-gate. Recommended (and
+            effectively required for reliability) when ``direct=True``.
+        retries, retry_wait, retry_backoff, retry_max_wait: Download retry
+            policy, forwarded to ``fetch_and_extract_document``.
+        debug (bool): When True, prints progress.
+
+    Returns:
+        The extracted text (str) or full Kreuzberg result for a scalar input;
+        a list of those (with ``None`` for unresolved entries) for a list input.
+    """
+    import httpx
+
+    TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
+    TED_NOTICE_URL = "https://api.ted.europa.eu/v3/notices/{num}/{fmt}"
+
+    def _pub_number(notice: Any) -> Optional[str]:
+        if isinstance(notice, dict):
+            return notice.get("publication_number")
+        return notice
+
+    def _pick_notice_url(links: dict) -> tuple:
+        """Pick (url, fmt): htmlDirect > html > pdf, preferring given langs."""
+        for f in ("htmlDirect", "html", "pdf"):
+            fmt_map = links.get(f) or {}
+            if not fmt_map:
+                continue
+            for lang in preferred_langs:
+                if lang in fmt_map:
+                    return fmt_map[lang], f
+            return next(iter(fmt_map.values()), None), f
+        return None, None
+
+    # Normalize to a list, remembering whether the caller passed a scalar so we
+    # can return in kind.
+    scalar_input = not isinstance(notices, (list, tuple))
+    items = [notices] if scalar_input else list(notices)
+    pub_numbers = [_pub_number(n) for n in items]
+
+    # Resolve (publication_number -> (url, fmt)) for every input entry.
+    resolved: dict = {}
+    if direct:
+        # Build the API v3 document URL deterministically; no Search round-trip.
+        for pub in pub_numbers:
+            if pub:
+                resolved[pub] = (
+                    TED_NOTICE_URL.format(num=pub, fmt=fmt),
+                    fmt,
+                )
+    else:
+        # Resolve real artifact links via the Search API in batches (no key).
+        links_by_pubnum: dict = {}
+        valid = [p for p in pub_numbers if p]
+        for i in range(0, len(valid), page_size):
+            batch = valid[i : i + page_size]
+            body = {
+                "query": "publication-number IN (" + " ".join(batch) + ")",
+                "fields": ["publication-number", "links"],
+                "limit": page_size,
+                "page": 1,
+                "paginationMode": "PAGE_NUMBER",
+            }
+            resp = httpx.post(TED_SEARCH_URL, json=body, timeout=timeout)
+            resp.raise_for_status()
+            for notice in resp.json().get("notices", []):
+                links_by_pubnum[notice.get("publication-number")] = notice.get(
+                    "links", {}
+                )
+        for pub in pub_numbers:
+            resolved[pub] = _pick_notice_url(links_by_pubnum.get(pub, {}))
+
+    results = []
+    for pub in pub_numbers:
+        url, used_fmt = resolved.get(pub, (None, None))
+        if not url:
+            if debug:
+                print(f"No downloadable link resolved for {pub}")
+            results.append(None)
+            continue
+        if debug:
+            print(f"Resolved {pub} -> {used_fmt}: {url}")
+        results.append(
+            fetch_and_extract_document(
+                url,
+                max_pages=max_pages,
+                debug=debug,
+                config=config,
+                download_formats=used_fmt,
+                timeout=timeout,
+                return_full=return_full,
+                user_agent=user_agent,
+                retries=retries,
+                retry_wait=retry_wait,
+                retry_backoff=retry_backoff,
+                retry_max_wait=retry_max_wait,
+                api_key=api_key,
+            )
+        )
+
+    return results[0] if scalar_input else results

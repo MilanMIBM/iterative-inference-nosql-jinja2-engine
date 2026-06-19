@@ -31,4 +31,6 @@ dependencies = [
     "wigglystuff>=0.3.1",
     "python-lsp-server>=1.14.0",
     "pycountry>=26.2.16",
+    "ftfy>=6.3.1",
+    "kreuzberg>=4.9.9",
 ]

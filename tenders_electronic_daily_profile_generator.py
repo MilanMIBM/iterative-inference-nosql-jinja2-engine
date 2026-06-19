@@ -45,13 +45,8 @@ def _():
         load_all_dotenv,
     )
 
-    from src.helpers.inference_helper_functions import (
-        initialize_inference_client,
-        get_models,
-        get_ica_models,
-        get_wxo_agents,
-        run_iterative_inference,
-    )
+
+    from src.helpers.inference_helper_functions_v2 import InferenceClient
 
     from src.helpers.marimo_sortable_kv import sortable_kv
     from src.helpers.marimo_nosql_docviewer_with_utils import nosql_doc_browser
@@ -281,7 +276,9 @@ def _():
 
 @app.cell
 def _(org_name_list):
-    organization_names = org_name_list.value.get("value") if org_name_list.value else []
+    organization_names = (
+        org_name_list.value.get("value") if org_name_list.value else []
+    )
     return (organization_names,)
 
 
@@ -440,7 +437,10 @@ def _(
         initialize_hcd_database(
             hcd_api_endpoint, hcd_api_username, hcd_api_password, hcd_keyspace
         )
-        if hcd_api_endpoint and hcd_api_username and hcd_api_password and hcd_keyspace
+        if hcd_api_endpoint
+        and hcd_api_username
+        and hcd_api_password
+        and hcd_keyspace
         else None
     )
     return (hcd,)

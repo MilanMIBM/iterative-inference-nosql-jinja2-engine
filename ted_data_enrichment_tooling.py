@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.9"
+__generated_with = "0.23.10"
 app = marimo.App(width="full")
 
 with app.setup:
@@ -11,6 +11,13 @@ with app.setup:
     import sys
     import os
     import io
+
+
+@app.cell
+def _():
+    from typing import Callable, Optional, Dict, List, Any, Union
+
+    return (Optional,)
 
 
 @app.cell
@@ -79,6 +86,7 @@ def _():
         build_additional_fields,
         build_buyer_profiles,
         extract_notice_documents,
+        fetch_and_extract_notice,
     )
 
     from wigglystuff import SortableList
@@ -91,6 +99,7 @@ def _():
         InferenceClient,
         extract_notice_documents,
         fetch_and_extract_document,
+        fetch_and_extract_notice,
         initialize_astradb_database,
         initialize_cloudant_database,
         initialize_hcd_database,
@@ -282,7 +291,7 @@ def _():
 def _(db_context_directory, db_context_directory_drilldown):
     collection_name_keys = {
         f"{db_context_directory}": "org_name",
-        f"{db_context_directory_drilldown}": "notice-title",
+        f"{db_context_directory_drilldown}": "notice_title",
         "generation_context": "iteration_id",
         "model_parameters": "parameter_set_name",
         "organization_context": "org_context.client_name",
@@ -320,6 +329,12 @@ def _(doc_browser):
 
 
 @app.cell
+def _(context_files):
+    context_files
+    return
+
+
+@app.cell
 def _():
     # context_files
     return
@@ -328,8 +343,33 @@ def _():
 @app.cell
 def _(context_files, extract_notice_documents):
     notice_documents = extract_notice_documents(context_files)
-    pd.DataFrame(notice_documents)
+    notice_documents_df = pd.DataFrame(notice_documents)
+    notice_documents_df
     return (notice_documents,)
+
+
+@app.cell
+def _():
+    # def collect_html_urls(df, url_column="download_urls"):
+    #     import ast
+
+    #     _all_urls = []
+    #     for _entry in df[url_column]:
+    #         if isinstance(_entry, str):
+    #             try:
+    #                 _parsed = ast.literal_eval(_entry)
+    #             except (ValueError, SyntaxError):
+    #                 _parsed = [_entry]
+    #         else:
+    #             _parsed = _entry
+    #         for _url in _parsed or []:
+    #             _all_urls.append(_url.replace("/pdf", "/html"))
+    #     return _all_urls
+
+
+    # html_urls = collect_html_urls(notice_documents_df)
+    # html_urls
+    return
 
 
 @app.cell
@@ -548,37 +588,30 @@ def _():
 def _():
     test_url = ["https://ted.europa.eu/en/notice/115434-2025/pdf"]
     test_formats = ["pdf"]
-    return test_formats, test_url
-
-
-@app.cell
-def _(fetch_and_extract_document, test_formats, test_url):
-    test_sample = fetch_and_extract_document(
-        test_url[0],
-        # max_pages=5,
-        download_formats=test_formats,
-        debug=False,
-        return_full=True,
-    )
-    test_sample
-    return (test_sample,)
-
-
-@app.cell
-def _(test_sample):
-    sampled = {
-        name: getattr(test_sample, name)
-        for name, attr in type(test_sample).__dict__.items()
-        if isinstance(attr, (property, type(type(test_sample).content)))
-    }
-    sampled
     return
 
 
 @app.cell
-def _(test_sample):
-    sample = test_sample.__doc__
-    mo.md(sample)
+def _():
+    # test_sample = fetch_and_extract_document(
+    #     test_url[0],
+    #     # max_pages=5,
+    #     download_formats=test_formats,
+    #     debug=False,
+    #     return_full=True,
+    # )
+    # test_sample
+    return
+
+
+@app.cell
+def _():
+    # sampled = {
+    #     name: getattr(test_sample, name)
+    #     for name, attr in type(test_sample).__dict__.items()
+    #     if isinstance(attr, (property, type(type(test_sample).content)))
+    # }
+    # # sampled
     return
 
 
@@ -776,11 +809,136 @@ def _(parsed_contents):
 
 @app.cell
 def _():
+    retrieve_contents = mo.ui.run_button(label="**Fetch file contents**")
+    retrieve_contents
+    return (retrieve_contents,)
+
+
+@app.cell
+def _(fetch_and_extract_notice, notice_documents, retrieve_contents):
+    if retrieve_contents.value and notice_documents:
+        retrieve_notice_docs = fetch_and_extract_notice(notice_documents)
+        retrieve_notice_docs_limited = fetch_and_extract_notice(
+            notice_documents, max_pages=2
+        )
+    else:
+        retrieve_notice_docs = retrieve_notice_docs_limited = []
+
+    retrieve_notice_docs
+    return retrieve_notice_docs, retrieve_notice_docs_limited
+
+
+@app.cell
+def _(retrieve_notice_docs, retrieve_notice_docs_limited):
+    mo.hstack(
+        [retrieve_notice_docs, retrieve_notice_docs_limited],
+        justify="space-around",
+        widths=[0.3, 0.3],
+    )
     return
 
 
 @app.cell
-def _():
+def _(Optional):
+    def retrieve_notice_contents(
+        notice_docs,
+        page_size: int = 100,
+        preferred_langs: tuple = ("ENG",),
+        timeout: float = 10.0,
+        user_agent: Optional[str] = None,
+        api_key: Optional[str] = None,
+        poll_interval: float = 2.0,
+        max_wait: float = 10.0,
+    ) -> list:
+        import httpx
+        import time
+        import certifi
+
+        TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
+
+        request_headers: dict[str, str] = {}
+        if user_agent:
+            request_headers["User-Agent"] = user_agent
+        if api_key:
+            request_headers["Authorization"] = f"Bearer {api_key}"
+
+        def _pick_notice_url(links):
+            """Pick (url, fmt): htmlDirect > html > pdf, preferring given languages."""
+            for fmt in ("htmlDirect", "html", "pdf"):
+                fmt_map = links.get(fmt) or {}
+                if not fmt_map:
+                    continue
+                for lang in preferred_langs:
+                    if lang in fmt_map:
+                        return fmt_map[lang], fmt
+                return next(iter(fmt_map.values()), None), fmt
+            return None, None
+
+        def _download(url: str) -> bytes:
+            deadline = time.monotonic() + max_wait
+            while True:
+                response = httpx.get(
+                    url,
+                    follow_redirects=False,
+                    timeout=timeout,
+                    headers=request_headers,
+                    verify=certifi.where(),
+                )
+                response.raise_for_status()
+                if response.status_code != 202 and response.content:
+                    return response.content
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        f"Document not ready (HTTP {response.status_code}, "
+                        f"{len(response.content)} bytes) for {url}"
+                    )
+                retry_after = response.headers.get("Retry-After")
+                wait = (
+                    float(retry_after)
+                    if retry_after and retry_after.isdigit()
+                    else poll_interval
+                )
+                time.sleep(min(wait, deadline - time.monotonic()))
+
+        # --- resolve real artifact links via the Search API (public, no key needed) ---
+        pub_numbers = [
+            d["publication_number"]
+            for d in notice_docs
+            if d.get("publication_number")
+        ]
+        links_by_pubnum = {}
+        for i in range(0, len(pub_numbers), page_size):
+            batch = pub_numbers[i : i + page_size]
+            body = {
+                "query": "publication-number IN (" + " ".join(batch) + ")",
+                "fields": ["publication-number", "links"],
+                "limit": page_size,
+                "page": 1,
+                "paginationMode": "PAGE_NUMBER",
+            }
+            resp = httpx.post(TED_SEARCH_URL, json=body, timeout=timeout)
+            resp.raise_for_status()
+            for notice in resp.json().get("notices", []):
+                links_by_pubnum[notice.get("publication-number")] = notice.get(
+                    "links", {}
+                )
+
+        # --- download each notice's contents ---
+        for d in notice_docs:
+            links = links_by_pubnum.get(d.get("publication_number"), {})
+            url, fmt = _pick_notice_url(links)
+            d["notice_source_url"] = url
+            d["notice_format"] = fmt
+            if url:
+                content = _download(url)
+                if fmt in ("htmlDirect", "html"):
+                    d["notice_content"] = content.decode("utf-8", errors="replace")
+                else:
+                    d["notice_content"] = content  # raw bytes (e.g. pdf)
+            else:
+                d["notice_content"] = None
+        return notice_docs
+
     return
 
 
