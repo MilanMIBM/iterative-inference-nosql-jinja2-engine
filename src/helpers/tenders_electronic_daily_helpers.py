@@ -1,11 +1,16 @@
 from typing import Callable, Optional, Dict, List, Any
 import pandas as pd
-import requests
+import marimo as mo
 import threading
+import requests
+import certifi
+import base64
 import json
 import time
 import uuid
 import os
+
+from urllib.parse import urlsplit, urlunsplit
 
 
 def build_additional_fields(
@@ -1616,3 +1621,273 @@ def fetch_and_extract_notice(
         )
 
     return results[0] if scalar_input else results
+
+
+### =============================================================
+#       Experimental Section
+### =============================================================
+# def render_notices_sequential_v1(
+#     urls,
+#     api_key,
+#     language="en",
+#     output_format="PDF",
+#     summary=False,
+#     base_url="https://api.ted.europa.eu",
+#     timeout=60,
+#     download_timeout=30.0,
+#     retry_waits=(1, 2, 3),
+# ):
+#     """Download then render each URL one at a time, logging both steps per file.
+
+#     Returns a list aligned with `urls`: the render response content (bytes) per URL,
+#     or None where the download failed after all retries or the render call failed.
+#     """
+
+#     def _ensure_base64(notice):
+#         """Return the notice as a base64 ASCII string, encoding it first if it isn't already base64."""
+#         raw = notice.encode() if isinstance(notice, str) else notice
+#         try:
+#             if base64.b64encode(base64.b64decode(raw, validate=True)) == raw:
+#                 return raw.decode("ascii")  # already base64
+#         except ValueError:
+#             pass  # not base64 -> fall through and encode
+#         return base64.b64encode(raw).decode("ascii")
+
+#     def _ensure_xml_url(url):
+#         """Rewrite a notice URL to request XML when it ends in another suffix.
+
+#         Render requires the XML source, but callers may pass a download URL whose
+#         last path segment is a format (e.g. ``.../12345-2024/pdf``) or a filename
+#         with an extension (e.g. ``.../notice.html``). Both are swapped to ``xml``;
+#         any query string and an already-``xml`` URL are left untouched.
+#         """
+#         _split = urlsplit(url)
+#         _path = _split.path
+#         _segment = _path.rsplit("/", 1)[-1]
+#         if "." in _segment:  # filename.ext style
+#             _base, _ext = _segment.rsplit(".", 1)
+#             if _ext.lower() == "xml":
+#                 return url
+#             _path = _path[: -len(_segment)] + f"{_base}.xml"
+#         elif _segment:  # trailing path-segment format style
+#             if _segment.lower() == "xml":
+#                 return url
+#             _path = _path[: -len(_segment)] + "xml"
+#         else:  # nothing to rewrite (empty path or trailing slash)
+#             return url
+#         return urlunsplit(_split._replace(path=_path))
+
+#     _render_url = f"{base_url.rstrip('/')}/v3/notices/render"
+#     _render_headers = {
+#         "Authorization": f"Bearer {api_key}"
+#     }  # POST-only, not sent on download GET
+#     _results = [None] * len(urls)
+#     with (
+#         requests.Session() as _session,
+#         mo.status.progress_bar(
+#             total=len(urls),
+#             title="Processing notices",
+#             remove_on_exit=True,
+#         ) as _bar,
+#     ):
+#         _session.headers.update({"Connection": "close"})  # Added session close
+#         for _i, _url in enumerate(urls):
+#             # ---- download ----
+#             _url = _ensure_xml_url(_url)  # render needs XML source, not pdf/html/etc.
+#             _bar.update(increment=0, subtitle=f"Downloading {_url}")
+#             _xml = None
+#             for _wait in (0, *retry_waits):  # immediate try, then 1s, 2s, 3s
+#                 if _wait:
+#                     time.sleep(_wait)
+#                 try:
+#                     _resp = _session.get(
+#                         _url, timeout=download_timeout, verify=certifi.where()
+#                     )
+#                     if _resp.status_code == 202:
+#                         continue  # under processing -> wait and retry
+#                     _resp.raise_for_status()
+#                     _xml = _resp.content
+#                     break
+#                 except requests.RequestException as _exc:
+#                     print(f"Download failed {_url}: {_exc}")
+
+#             # ---- render ----
+#             if _xml is None:
+#                 print(f"Skipped {_url} (download failed)")
+#             else:
+#                 _bar.update(increment=0, subtitle=f"Rendering {_url}")
+#                 _payload = {
+#                     "file": _ensure_base64(_xml),
+#                     "language": language,
+#                     "format": output_format,
+#                     "summary": summary,
+#                 }
+#                 try:
+#                     _render_resp = _session.post(
+#                         _render_url,
+#                         json=_payload,
+#                         headers=_render_headers,
+#                         timeout=timeout,
+#                     )
+#                     _render_resp.raise_for_status()
+#                     _results[_i] = _render_resp.content
+#                 except requests.RequestException as _exc:
+#                     print(f"Render failed {_url}: {_exc}")
+
+#             _bar.update()  # advance one file (runs for every URL, success or skip)
+#     return _results
+
+
+def render_notices_sequential(
+    urls,
+    api_key,
+    language="en",
+    output_format="PDF",
+    summary=False,
+    base_url="https://api.ted.europa.eu",
+    timeout=60,
+    download_timeout=30.0,
+    poll_interval=2.0,
+    max_wait=60.0,
+):
+    """Download then render each URL one at a time, logging both steps per file.
+
+    Returns a list aligned with `urls`: the render response content (bytes) per URL,
+    or None where the download failed after all retries or the render call failed.
+
+    A freshly-requested TED notice may not be ready yet: the host answers with
+    HTTP 202 ("under processing") or a 200 with an empty body. The download polls
+    until the notice materializes or ``max_wait`` seconds elapse, sleeping the
+    server's ``Retry-After`` between polls when present, otherwise ``poll_interval``.
+    """
+
+    def _ensure_base64(notice):
+        """Return the notice as a base64 ASCII string, encoding it first if it isn't already base64."""
+        raw = notice.encode() if isinstance(notice, str) else notice
+        try:
+            if base64.b64encode(base64.b64decode(raw, validate=True)) == raw:
+                return raw.decode("ascii")  # already base64
+        except ValueError:
+            pass  # not base64 -> fall through and encode
+        return base64.b64encode(raw).decode("ascii")
+
+    def _ensure_xml_url(url):
+        """Rewrite a notice URL to request XML when it ends in another suffix.
+
+        Render requires the XML source, but callers may pass a download URL whose
+        last path segment is a format (e.g. ``.../12345-2024/pdf``) or a filename
+        with an extension (e.g. ``.../notice.html``). Both are swapped to ``xml``;
+        any query string and an already-``xml`` URL are left untouched.
+        """
+        _split = urlsplit(url)
+        _path = _split.path
+        _segment = _path.rsplit("/", 1)[-1]
+        if "." in _segment:  # filename.ext style
+            _base, _ext = _segment.rsplit(".", 1)
+            if _ext.lower() == "xml":
+                return url
+            _path = _path[: -len(_segment)] + f"{_base}.xml"
+        elif _segment:  # trailing path-segment format style
+            if _segment.lower() == "xml":
+                return url
+            _path = _path[: -len(_segment)] + "xml"
+        else:  # nothing to rewrite (empty path or trailing slash)
+            return url
+        return urlunsplit(_split._replace(path=_path))
+
+    _render_url = f"{base_url.rstrip('/')}/v3/notices/render"
+    _render_headers = {
+        "Authorization": f"Bearer {api_key}"
+    }  # POST-only, not sent on download GET
+    _results = [None] * len(urls)
+    with (
+        requests.Session() as _session,
+        mo.status.progress_bar(
+            total=len(urls),
+            title="Processing notices",
+            remove_on_exit=True,
+        ) as _bar,
+    ):
+        _session.headers.update({"Connection": "close"})  # Added session close
+        _session.verify = certifi.where()  # same CA bundle for download GET and render POST
+        for _i, _url in enumerate(urls):
+            # ---- download ----
+            _url = _ensure_xml_url(_url)  # render needs XML source, not pdf/html/etc.
+            _bar.update(increment=0, subtitle=f"Downloading {_url}")
+            _xml = None
+            _deadline = time.monotonic() + max_wait
+            while True:
+                _wait = poll_interval  # default sleep unless the server says otherwise
+                try:
+                    _resp = _session.get(_url, timeout=download_timeout)
+                    # 202 = under processing; empty 200 = not ready yet -> keep polling
+                    if _resp.status_code != 202 and _resp.content:
+                        _resp.raise_for_status()
+                        _xml = _resp.content
+                        break
+                    _retry_after = _resp.headers.get("Retry-After")
+                    if _retry_after and _retry_after.isdigit():
+                        _wait = float(_retry_after)
+                except requests.RequestException as _exc:
+                    print(f"Download failed {_url}: {_exc}")
+                _remaining = _deadline - time.monotonic()
+                if _remaining <= 0:
+                    break  # gave up waiting for the notice to materialize
+                time.sleep(min(_wait, _remaining))
+
+            # ---- render ----
+            if _xml is None:
+                print(f"Skipped {_url} (download failed)")
+            else:
+                _bar.update(increment=0, subtitle=f"Rendering {_url}")
+                _payload = {
+                    "file": _ensure_base64(_xml),
+                    "language": language,
+                    "format": output_format,
+                    "summary": summary,
+                }
+                try:
+                    _render_resp = _session.post(
+                        _render_url,
+                        json=_payload,
+                        headers=_render_headers,
+                        timeout=timeout,
+                    )
+                    _render_resp.raise_for_status()
+                    _results[_i] = _render_resp.content
+                except requests.RequestException as _exc:
+                    print(f"Render failed {_url}: {_exc}")
+
+            _bar.update()  # advance one file (runs for every URL, success or skip)
+    return _results
+
+
+def extract_downloaded_files(downloaded_bytes, file_format="pdf"):
+    from kreuzberg import extract_bytes_sync
+
+    _mime_map = {
+        "xml": "application/xml",
+        "html": "text/html",
+        "pdf": "application/pdf",
+        "txt": "text/plain",
+    }
+    _mime = _mime_map.get(file_format, file_format)
+
+    _extracted = []
+    with mo.status.progress_bar(
+        total=len(downloaded_bytes),
+        title="Extracting files",
+        remove_on_exit=True,
+    ) as _bar:
+        for _content in downloaded_bytes:
+            if _content is None:
+                _extracted.append(None)
+            else:
+                try:
+                    _result = extract_bytes_sync(_content, mime_type=_mime)
+                    _extracted.append(_result.content)
+                except Exception as _exc:
+                    print(f"Failed to extract: {_exc}")
+                    _extracted.append(None)
+            _bar.update()
+    return _extracted

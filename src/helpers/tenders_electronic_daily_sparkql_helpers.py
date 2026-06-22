@@ -2,7 +2,7 @@
 SPARQL-based notice retrieval against the TED Open Data Service (ODS).
 
 This module is a companion to ``tenders_electronic_daily_helpers`` and provides
-``fetch_and_extract_document_sparkql`` — the SPARQL/ODS counterpart to that
+``fetch_and_extract_document_sparkql`` - the SPARQL/ODS counterpart to that
 module's ``fetch_and_extract_document``.
 
 Why SPARQL instead of downloading the rendered document?
@@ -12,7 +12,7 @@ by publication number (the ``/v3/notices/{num}/{fmt}`` route is eNotices2-only a
 returns ``403`` for arbitrary notices; the Search API only hands back ``links`` to
 ``ted.europa.eu`` URLs that are gated behind ``202`` and must be polled). The TED
 Open Data Service, however, exposes the notice's *structured content* as RDF via a
-public SPARQL endpoint — synchronously, with no API key and no rate-gate. For an
+public SPARQL endpoint - synchronously, with no API key and no rate-gate. For an
 enrichment/profiling pipeline this is both more reliable and more useful than
 scraping rendered HTML.
 
@@ -284,11 +284,15 @@ def fetch_and_extract_document_sparkql(
     user_agent: Optional[str] = None,
     retries: int = 8,
     retry_wait: float = 2.0,
+    extract: bool = False,
+    extract_config: Optional[Any] = None,
+    max_pages: Optional[int] = None,
+    show_progress: bool = True,
     debug: bool = False,
 ) -> Any:
     """
     Retrieve a TED notice from the Open Data Service via SPARQL, returning
-    serialized RDF (or a pandas DataFrame) — or, with ``render``, the actual
+    serialized RDF (or a pandas DataFrame) - or, with ``render``, the actual
     rendered HTML/PDF document.
 
     This is the SPARQL/ODS counterpart to ``fetch_and_extract_document``. By
@@ -298,13 +302,13 @@ def fetch_and_extract_document_sparkql(
     **Render mode (``render="HTML"`` or ``render="PDF"``):** the structured RDF
     is *not* the rendered document, so when you actually need the HTML/PDF this
     runs a separate chain: download the notice's source XML from the TED website
-    (polling through the ``202`` gate — the ``xml`` artifact clears it far more
+    (polling through the ``202`` gate - the ``xml`` artifact clears it far more
     readily than ``html``/``pdf``), then POST it to the TED API
     ``/v3/notices/render`` endpoint, which renders it server-side. This requires a
     TED ``api_key`` (Bearer token). The raw rendered bytes are returned: HTML as a
     ``str``, PDF as ``bytes``.
 
-    Input is flexible — each entry may be:
+    Input is flexible - each entry may be:
 
     * a publication number, padded or unpadded (``"00331119-2025"`` /
       ``"331119-2025"``), or
@@ -344,14 +348,33 @@ def fetch_and_extract_document_sparkql(
         retries (int): XML download attempts when rendering (poll the ``202``
             gate). Default 8.
         retry_wait (float): Seconds between XML download attempts. Default 2.0.
+        extract (bool): Render mode only. When True, the rendered HTML/PDF bytes
+            are run through Kreuzberg's ``extract_bytes_sync`` and the extracted
+            **text** (str) is returned instead of the raw HTML ``str`` / PDF
+            ``bytes``. Has no effect outside ``render`` mode (the RDF/DataFrame
+            path is unchanged). Defaults to False.
+        extract_config: Optional Kreuzberg ``ExtractionConfig`` passed through to
+            extraction when ``extract`` is True. When ``None``, Kreuzberg's
+            defaults are used (overridden by a page-extraction config if
+            ``max_pages`` is set).
+        max_pages (int, optional): Render+extract only. Maximum number of pages
+            to include from a paginated rendered document (e.g. a PDF). ``None``
+            includes all pages.
+        show_progress (bool): When True (default), display a
+            ``mo.status.progress_bar`` (with ``remove_on_exit=True``) that
+            advances once per input document, showing the current publication
+            number in its subtitle. Silently disabled if marimo is unavailable
+            (e.g. when called outside a marimo context). Ignored in ``render``
+            mode.
         debug (bool): When True, prints progress and the query.
 
     Returns:
-        Without ``render`` — for a scalar input: the serialized RDF (str) or a
+        Without ``render`` - for a scalar input: the serialized RDF (str) or a
         pandas DataFrame (or ``None``); for a list input: a list of those.
-        With ``render`` — the rendered document (HTML ``str`` / PDF ``bytes``),
+        With ``render`` - the rendered document (HTML ``str`` / PDF ``bytes``),
         scalar-in/scalar-out, with ``None`` for entries that could not be
-        rendered.
+        rendered. With ``render`` and ``extract=True`` - the extracted text
+        (``str``) of each rendered document instead of its raw bytes.
 
     Raises:
         ValueError: If ``download_type``/``render`` is unknown, an entry has no
@@ -370,6 +393,9 @@ def fetch_and_extract_document_sparkql(
             user_agent=user_agent,
             retries=retries,
             retry_wait=retry_wait,
+            extract=extract,
+            extract_config=extract_config,
+            max_pages=max_pages,
             debug=debug,
         )
 
@@ -393,8 +419,25 @@ def fetch_and_extract_document_sparkql(
     scalar_input = not isinstance(documents, (list, tuple))
     items = [documents] if scalar_input else list(documents)
 
+    # Resolve the progress bar lazily: marimo isn't a hard dependency of this
+    # module, so fall back to no progress UI when it's unavailable.
+    progress = None
+    if show_progress:
+        try:
+            import marimo as mo
+
+            progress = mo.status.progress_bar(
+                total=len(items),
+                title="Fetching ODS notices",
+                completion_title="ODS notices complete",
+                remove_on_exit=True,
+            )
+        except Exception:  # noqa: BLE001 - any import/context failure -> no bar
+            progress = None
+
     results: List[Any] = []
-    for doc in items:
+
+    def _process(doc: Any, bar=None) -> None:
         raw = _pub_input(doc)
         try:
             pub = publication_number_from_input(raw)
@@ -402,7 +445,12 @@ def fetch_and_extract_document_sparkql(
             if debug:
                 print(f"Skipping unresolvable input {raw!r}: {exc}")
             results.append(None)
-            continue
+            return
+
+        if bar is not None:
+            # increment=0 so this only sets the subtitle; the step is advanced
+            # once per document after processing.
+            bar.update(increment=0, subtitle=f"Fetching {pub}")
 
         query = _build_query(pub, whole_graph)
         if debug:
@@ -413,12 +461,21 @@ def fetch_and_extract_document_sparkql(
             if debug:
                 print(f"No RDF returned for {pub}")
             results.append(None)
-            continue
+            return
 
         if as_dataframe:
             results.append(_ntriples_to_dataframe(content))
         else:
             results.append(content.decode("utf-8", errors="replace"))
+
+    if progress is not None:
+        with progress as bar:
+            for doc in items:
+                _process(doc, bar=bar)
+                bar.update()  # advance one step per document
+    else:
+        for doc in items:
+            _process(doc)
 
     return results[0] if scalar_input else results
 
@@ -432,20 +489,23 @@ def _fetch_rendered(
     user_agent: Optional[str],
     retries: int,
     retry_wait: float,
-    debug: bool,
+    extract: bool = False,
+    extract_config: Optional[Any] = None,
+    max_pages: Optional[int] = None,
+    debug: bool = False,
 ) -> Any:
     """
     Render mode for :func:`fetch_and_extract_document_sparkql`: download each
     notice's XML and render it to HTML/PDF via the TED API.
 
     Returns HTML as ``str`` and PDF as ``bytes``; scalar-in/scalar-out, with
-    ``None`` for entries that fail.
+    ``None`` for entries that fail. When ``extract`` is True, the rendered bytes
+    are run through Kreuzberg and the extracted text (``str``) is returned
+    instead of the raw HTML/PDF.
     """
     render_format = render.strip().upper()
     if render_format not in ("HTML", "PDF"):
-        raise ValueError(
-            f"Unknown render {render!r}; choose 'HTML' or 'PDF'"
-        )
+        raise ValueError(f"Unknown render {render!r}; choose 'HTML' or 'PDF'")
     if not api_key:
         raise ValueError(
             "render requires a TED api_key (pass api_key=... or set TED_API_KEY)"
@@ -455,6 +515,47 @@ def _fetch_rendered(
         if isinstance(doc, dict):
             return doc.get("publication_number") or doc.get("url") or ""
         return doc
+
+    # Rendered HTML/PDF carries a deterministic MIME type, so extraction skips
+    # the sibling's sniff/fallback chain and hands Kreuzberg the type directly.
+    extract_mime = "text/html" if render_format == "HTML" else "application/pdf"
+
+    # When extracting, resolve the Kreuzberg config once. ``max_pages`` forces a
+    # page-extraction config so per-page content is available to slice (mirrors
+    # ``fetch_and_extract_document``); otherwise the caller's config (or
+    # Kreuzberg's defaults) is used as-is.
+    active_extract_config = extract_config
+    if extract and max_pages is not None:
+        from kreuzberg import ExtractionConfig, PageConfig
+
+        existing_pages = getattr(extract_config, "pages", None)
+        active_extract_config = ExtractionConfig(
+            pages=PageConfig(
+                extract_pages=True,
+                insert_page_markers=getattr(
+                    existing_pages, "insert_page_markers", None
+                ),
+                marker_format=getattr(existing_pages, "marker_format", None),
+            )
+        )
+        if extract_config is not None and debug:
+            print(
+                "  note: max_pages set -> using a page-extraction config; "
+                "other custom extract_config fields are not applied"
+            )
+
+    def _extract_text(rendered_bytes: bytes) -> str:
+        """Extract text from rendered HTML/PDF bytes via Kreuzberg."""
+        from kreuzberg import extract_bytes_sync
+
+        result = extract_bytes_sync(
+            rendered_bytes, mime_type=extract_mime, config=active_extract_config
+        )
+        if max_pages is not None:
+            pages = getattr(result, "pages", None) or []
+            if pages:
+                return "\f".join(p.get("content", "") for p in pages[:max_pages])
+        return result.content
 
     scalar_input = not isinstance(documents, (list, tuple))
     items = [documents] if scalar_input else list(documents)
@@ -483,13 +584,16 @@ def _fetch_rendered(
             rendered = _render_notice(
                 xml_bytes, render_format, render_language, api_key, timeout
             )
-        except Exception as exc:  # download or render failed
+            extracted = _extract_text(rendered) if extract else None
+        except Exception as exc:  # download, render, or extract failed
             if debug:
                 print(f"  render failed for {unpadded}: {exc}")
             results.append(None)
             continue
 
-        if render_format == "HTML":
+        if extract:
+            results.append(extracted)  # extracted text (str)
+        elif render_format == "HTML":
             results.append(rendered.decode("utf-8", errors="replace"))
         else:
             results.append(rendered)  # raw PDF bytes
@@ -511,11 +615,11 @@ def _is_empty_rdf(content: Optional[bytes]) -> bool:
     )
 
 
-# One N-Triples line: <subject> <predicate> object . — object may be an IRI, a
+# One N-Triples line: <subject> <predicate> object . - object may be an IRI, a
 # blank node, or a literal (optionally with a language tag or ^^datatype).
 _NT_LINE_RE = re.compile(
-    r'^\s*(?P<s><[^>]*>|_:[^\s]+)\s+'
-    r'(?P<p><[^>]*>)\s+'
+    r"^\s*(?P<s><[^>]*>|_:[^\s]+)\s+"
+    r"(?P<p><[^>]*>)\s+"
     r'(?P<o><[^>]*>|_:[^\s]+|".*")\s*\.\s*$'
 )
 
