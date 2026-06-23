@@ -1809,7 +1809,9 @@ def render_notices_sequential(
         ) as _bar,
     ):
         _session.headers.update({"Connection": "close"})  # Added session close
-        _session.verify = certifi.where()  # same CA bundle for download GET and render POST
+        _session.verify = (
+            certifi.where()
+        )  # same CA bundle for download GET and render POST
         for _i, _url in enumerate(urls):
             # ---- download ----
             _url = _ensure_xml_url(_url)  # render needs XML source, not pdf/html/etc.
@@ -1862,7 +1864,43 @@ def render_notices_sequential(
     return _results
 
 
-def extract_downloaded_files(downloaded_bytes, file_format="pdf"):
+def extract_downloaded_files(
+    downloaded_bytes,
+    file_format="pdf",
+    config: Optional[Any] = None,
+    max_pages: Optional[int] = None,
+    return_full_extraction_objects: bool = False,
+):
+    """
+    Extract text from already-downloaded file bytes using Kreuzberg.
+
+    Args:
+        downloaded_bytes: Iterable of file byte payloads (``None`` entries are
+            passed through as ``None`` in the result).
+        file_format (str): Format key (``"pdf"``, ``"xml"``, ``"html"``,
+            ``"txt"``) or a raw MIME type, used to resolve the MIME type.
+        config: Optional Kreuzberg ``ExtractionConfig`` controlling extraction
+            behaviour (OCR, chunking, page selection, etc.). When ``None``,
+            Kreuzberg's defaults are used. Mirrors the optional config wired
+            into ``fetch_and_extract_document``. Note: when ``max_pages`` is set,
+            a page-extraction config is used and other custom config fields are
+            not applied.
+        max_pages (int, optional): Maximum number of pages to include (for
+            paginated documents like PDFs). When set, per-page content is
+            joined with form-feed (``\\f``) separators. If ``None``, all pages
+            are included.
+        return_full_extraction_objects (bool): When True, return the full
+            Kreuzberg ``ExtractionResult`` object for each input instead of just
+            its ``content`` string (failed/``None`` inputs are still ``None``).
+            Takes precedence over ``max_pages`` content joining, since the full
+            object already carries per-page data on ``result.pages``. Defaults
+            to False.
+
+    Returns:
+        list: Extracted text content per input -- or the full Kreuzberg result
+            object when ``return_full_extraction_objects`` is True -- with
+            ``None`` for inputs that were ``None`` or failed to extract.
+    """
     from kreuzberg import extract_bytes_sync
 
     _mime_map = {
@@ -1872,6 +1910,26 @@ def extract_downloaded_files(downloaded_bytes, file_format="pdf"):
         "txt": "text/plain",
     }
     _mime = _mime_map.get(file_format, file_format)
+
+    # When ``max_pages`` is requested we need Kreuzberg to return per-page
+    # content (``result.pages``); the extracted text itself contains no
+    # form-feed/page delimiters to split on. Force ``extract_pages`` on,
+    # preserving any other page settings the caller supplied. This mirrors the
+    # config handling in ``fetch_and_extract_document``.
+    _active_config = config
+    if max_pages is not None:
+        from kreuzberg import ExtractionConfig, PageConfig
+
+        _existing_pages = getattr(config, "pages", None)
+        _active_config = ExtractionConfig(
+            pages=PageConfig(
+                extract_pages=True,
+                insert_page_markers=getattr(
+                    _existing_pages, "insert_page_markers", None
+                ),
+                marker_format=getattr(_existing_pages, "marker_format", None),
+            )
+        )
 
     _extracted = []
     with mo.status.progress_bar(
@@ -1884,10 +1942,171 @@ def extract_downloaded_files(downloaded_bytes, file_format="pdf"):
                 _extracted.append(None)
             else:
                 try:
-                    _result = extract_bytes_sync(_content, mime_type=_mime)
-                    _extracted.append(_result.content)
+                    _result = extract_bytes_sync(
+                        _content, mime_type=_mime, config=_active_config
+                    )
+                    if return_full_extraction_objects:
+                        _extracted.append(_result)
+                    elif max_pages is not None:
+                        _pages = getattr(_result, "pages", None) or []
+                        if _pages:
+                            _extracted.append(
+                                "\f".join(
+                                    _page.get("content", "")
+                                    for _page in _pages[:max_pages]
+                                )
+                            )
+                        else:
+                            # No per-page data (e.g. non-paginated format);
+                            # fall back to the full content unchanged.
+                            _extracted.append(_result.content)
+                    else:
+                        _extracted.append(_result.content)
                 except Exception as _exc:
                     print(f"Failed to extract: {_exc}")
                     _extracted.append(None)
             _bar.update()
+    return _extracted
+
+
+def extract_downloaded_files_batch(
+    downloaded_bytes,
+    file_format="pdf",
+    config: Optional[Any] = None,
+    max_pages: Optional[int] = None,
+    return_full_extraction_objects: bool = False,
+):
+    """
+    Batch variant of ``extract_downloaded_files`` using Kreuzberg's
+    ``batch_extract_bytes_sync``.
+
+    Functionally equivalent to ``extract_downloaded_files`` (same arguments and
+    return shape) but extracts all payloads in a single batch call, which lets
+    Kreuzberg parallelise the work instead of processing files one at a time.
+
+    Two behavioural notes specific to the batch API (Kreuzberg 4.x):
+
+    * The batch call takes two parallel lists -- ``data_list`` and
+      ``mime_types`` -- and every entry needs a MIME type, so ``None`` inputs
+      cannot be part of the batch. They are skipped and spliced back into the
+      output as ``None`` so the result stays index-aligned with
+      ``downloaded_bytes``.
+    * ``batch_extract_bytes_sync`` does not raise on a single bad file; it
+      returns a result whose ``content`` is an ``"Error: ..."`` sentinel for
+      that item. Those are mapped to ``None`` to match the per-file graceful
+      degradation of ``extract_downloaded_files``. (If the whole call raises,
+      every item in the batch is ``None``.)
+
+    Args:
+        downloaded_bytes: Iterable of file byte payloads (``None`` entries are
+            passed through as ``None`` in the result).
+        file_format (str): Format key (``"pdf"``, ``"xml"``, ``"html"``,
+            ``"txt"``) or a raw MIME type, used to resolve the MIME type.
+        config: Optional Kreuzberg ``ExtractionConfig`` controlling extraction
+            behaviour (OCR, chunking, page selection, etc.). When ``None``,
+            Kreuzberg's defaults are used. Note: when ``max_pages`` is set, a
+            page-extraction config is used and other custom config fields are
+            not applied.
+        max_pages (int, optional): Maximum number of pages to include (for
+            paginated documents like PDFs). When set, per-page content is
+            joined with form-feed (``\\f``) separators. If ``None``, all pages
+            are included.
+        return_full_extraction_objects (bool): When True, return the full
+            Kreuzberg ``ExtractionResult`` object for each input instead of just
+            its ``content`` string (failed/``None``/error-sentinel inputs are
+            still ``None``). Takes precedence over ``max_pages`` content joining,
+            since the full object already carries per-page data on
+            ``result.pages``. Defaults to False.
+
+    Returns:
+        list: Extracted text content per input -- or the full Kreuzberg result
+            object when ``return_full_extraction_objects`` is True -- with
+            ``None`` for inputs that were ``None`` or failed to extract,
+            index-aligned with ``downloaded_bytes``.
+    """
+    from kreuzberg import batch_extract_bytes_sync
+
+    _mime_map = {
+        "xml": "application/xml",
+        "html": "text/html",
+        "pdf": "application/pdf",
+        "txt": "text/plain",
+    }
+    _mime = _mime_map.get(file_format, file_format)
+
+    # When ``max_pages`` is requested we need Kreuzberg to return per-page
+    # content (``result.pages``); the extracted text itself contains no
+    # form-feed/page delimiters to split on. Force ``extract_pages`` on,
+    # preserving any other page settings the caller supplied. This mirrors the
+    # config handling in ``extract_downloaded_files`` / ``fetch_and_extract_document``.
+    _active_config = config
+    if max_pages is not None:
+        from kreuzberg import ExtractionConfig, PageConfig
+
+        _existing_pages = getattr(config, "pages", None)
+        _active_config = ExtractionConfig(
+            pages=PageConfig(
+                extract_pages=True,
+                insert_page_markers=getattr(
+                    _existing_pages, "insert_page_markers", None
+                ),
+                marker_format=getattr(_existing_pages, "marker_format", None),
+            )
+        )
+
+    def _content_for(_result):
+        """Map a Kreuzberg result to the output string, honouring max_pages."""
+        if max_pages is not None:
+            _pages = getattr(_result, "pages", None) or []
+            if _pages:
+                return "\f".join(
+                    _page.get("content", "") for _page in _pages[:max_pages]
+                )
+            # No per-page data (e.g. non-paginated format); fall back to the
+            # full content unchanged.
+            return _result.content
+        return _result.content
+
+    # Build the two parallel lists the batch API expects (data_list +
+    # mime_types) from the non-None payloads, remembering each one's index in
+    # the original sequence so results can be spliced back in order.
+    _extracted = [None] * len(downloaded_bytes)
+    _positions = []
+    _data_list = []
+    _mime_types = []
+    for _idx, _content in enumerate(downloaded_bytes):
+        if _content is None:
+            continue
+        _positions.append(_idx)
+        _data_list.append(_content)
+        _mime_types.append(_mime)
+
+    if not _data_list:
+        return _extracted
+
+    with mo.status.progress_bar(
+        total=1,
+        title="Extracting files (batch)",
+        remove_on_exit=True,
+    ) as _bar:
+        try:
+            _results = batch_extract_bytes_sync(
+                _data_list, _mime_types, _active_config
+            )
+            for _pos, _result in zip(_positions, _results):
+                # Kreuzberg reports a per-item failure as an ``"Error: ..."``
+                # content sentinel rather than raising; treat those as failures
+                # (None) like the non-batch extractor does.
+                _content = getattr(_result, "content", None)
+                if isinstance(_content, str) and _content.startswith("Error:"):
+                    print(f"Failed to extract: {_content}")
+                    _extracted[_pos] = None
+                elif return_full_extraction_objects:
+                    _extracted[_pos] = _result
+                else:
+                    _extracted[_pos] = _content_for(_result)
+        except Exception as _exc:
+            # A failure of the whole batch call leaves every item as None.
+            print(f"Batch extract failed: {_exc}")
+        _bar.update()
     return _extracted

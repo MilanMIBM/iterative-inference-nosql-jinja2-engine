@@ -2232,3 +2232,28 @@ def update_iteration_document(
             f"(provider={backend}, db_name={db_name}, "
             f"iteration_id={iteration_id}, cause_type={type(exc).__name__}, cause={exc})"
         ) from exc
+
+
+def append_rendered_yaml(df, content_column="content", output_column="rendered_yaml"):
+    _df = df.copy()
+    _df[output_column] = _df[content_column].apply(
+        lambda _text: parse_yaml_documents(_text) if isinstance(_text, str) else None
+    )
+    return _df
+
+
+def collect_urls(df, url_column="download_urls", extension_replacement="/xml"):
+    import ast
+
+    all_urls = []
+    for _entry in df[url_column]:
+        if isinstance(_entry, str):
+            try:
+                parsed = ast.literal_eval(_entry)
+            except (ValueError, SyntaxError):
+                parsed = [_entry]
+        else:
+            parsed = _entry
+        for url in parsed or []:
+            all_urls.append(url.replace("/pdf", extension_replacement))
+    return all_urls

@@ -245,3 +245,38 @@ def marimo_create_data_editor_df(
         else:
             data[col] = pd.array([fill_value] * num_rows, dtype="str")
     return pd.DataFrame(data)
+
+
+def iso_lang(lang_code: str) -> str:
+    import pycountry
+
+    _lang = pycountry.languages.lookup(lang_code)
+    return (
+        getattr(_lang, "alpha_2", None) or getattr(_lang, "alpha_3", lang_code)
+    ).lower()
+
+
+def compare_storage_size(text_documents, pdf_documents, per_object=True):
+    """Print sizes (MB) of a text list vs. an equivalent PDF-binary list.
+
+    Set per_object=True to also print a per-index breakdown.
+    """
+    text_sizes = [len(t.encode("utf-8")) for t in text_documents]
+    pdf_sizes = [len(p) for p in pdf_documents]
+
+    mb = 1024 * 1024
+
+    if per_object:
+        for i in range(min(len(text_sizes), len(pdf_sizes))):
+            print(
+                f"[{i}] text: {text_sizes[i] / mb:.4f} MB | pdf: {pdf_sizes[i] / mb:.4f} MB"
+            )
+        print("-" * 40)
+
+    text_mb = sum(text_sizes) / mb
+    pdf_mb = sum(pdf_sizes) / mb
+
+    print(f"Text: {text_mb:.4f} MB")
+    print(f"PDF:  {pdf_mb:.4f} MB")
+
+    return text_mb, pdf_mb
