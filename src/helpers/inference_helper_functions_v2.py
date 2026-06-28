@@ -42,7 +42,7 @@ class InferenceClient:
     - pass ``model_id`` / ``agent_id`` to ``__init__`` (the default for all calls),
     - switch the default later with ``set_model(...)`` / ``set_agent(...)``,
     - or override per call by passing ``model_id`` / ``agent_id`` directly to
-      ``run_chat_inference`` / ``run_iterative_inference``.
+    ``run_chat_inference`` / ``run_iterative_inference``.
 
     Example::
 
@@ -114,14 +114,14 @@ class InferenceClient:
             generic OpenAI endpoints pass the endpoint-specific key here.
         url:
             Unified endpoint URL. Its meaning depends on the provider:
-              - watsonx: watsonx.ai service URL.
-              - openai:  full OpenAI-compatible base URL.
-              - rhai:    OpenAI-compatible base URL. If omitted, it is built
+                - watsonx: watsonx.ai service URL.
+                - openai:  full OpenAI-compatible base URL.
+                - rhai:    OpenAI-compatible base URL. If omitted, it is built
                         automatically from ``project`` + ``region``.
-              - ica:     OpenAI-compatible base URL. Defaults to
+                - ica:     OpenAI-compatible base URL. Defaults to
                         https://api.nextgen-beta.ica.ibm.com/ica/v1/chat-models
                         if omitted; override via ICA_BASE_URL env var.
-              - wxo:     WXO service-instance URL.
+                - wxo:     WXO service-instance URL.
             The legacy ``base_url`` (openai/rhai/ica) and ``instance_url`` (wxo)
             keyword arguments are still accepted and, if given, populate ``url``.
 
@@ -352,13 +352,9 @@ class InferenceClient:
 
         if provider == "ica":
             if not api_key:
-                print(
-                    "InferenceClient (ica): api_key is required. Returning None."
-                )
+                print("InferenceClient (ica): api_key is required. Returning None.")
                 return None
-            _base_url = (
-                url or "https://api.nextgen-beta.ica.ibm.com/ica/v1/chat-models"
-            )
+            _base_url = url or "https://api.nextgen-beta.ica.ibm.com/ica/v1/chat-models"
             from openai import OpenAI
 
             client = OpenAI(api_key=api_key, base_url=_base_url, **kwargs)
@@ -442,9 +438,7 @@ class InferenceClient:
             print(f"WXO client initialised - base_url: {meta['base_url']}")
             return meta
 
-        print(
-            f"InferenceClient: unknown provider '{provider}'. Returning None."
-        )
+        print(f"InferenceClient: unknown provider '{provider}'. Returning None.")
         return None
 
     # ---------------------------------------------------------------------------
@@ -564,7 +558,9 @@ class InferenceClient:
                 )
             if not api_key and not password:
                 raise ValueError("Either api_key or password is required for cpd auth.")
-            cpd_iam_url = iam_url or f"{instance_url.split('/orchestrate')[0]}/icp4d-api"
+            cpd_iam_url = (
+                iam_url or f"{instance_url.split('/orchestrate')[0]}/icp4d-api"
+            )
             authenticator = CloudPakForDataAuthenticator(
                 username=username,
                 password=password or None,
@@ -761,7 +757,11 @@ class InferenceClient:
                 )["id"].tolist()
             )
             consumptive = sorted([m for m in all_models if m not in creditless])
-            return {"all": all_models, "creditless": creditless, "consumptive": consumptive}
+            return {
+                "all": all_models,
+                "creditless": creditless,
+                "consumptive": consumptive,
+            }
         except Exception as e:
             print(f"get_ica_models error: {e}")
             return {"all": [], "creditless": [], "consumptive": []}
@@ -785,7 +785,9 @@ class InferenceClient:
             if isinstance(agents, dict):
                 agents = agents.get("resources", []) or []
             return {
-                a.get("display_name") or a.get("name") or a.get("id", ""): a.get("id", "")
+                a.get("display_name") or a.get("name") or a.get("id", ""): a.get(
+                    "id", ""
+                )
                 for a in agents
                 if a.get("id")
             }
@@ -865,7 +867,9 @@ class InferenceClient:
 
             # OpenAI-compatible path (openai, rhai, ica)
             if model_id is None:
-                raise ValueError(f"run_chat_inference ({provider}): model_id is required")
+                raise ValueError(
+                    f"run_chat_inference ({provider}): model_id is required"
+                )
 
             extra = {k: v for k, v in params.items() if k != "model_id"}
             response = client.chat.completions.create(
@@ -875,7 +879,9 @@ class InferenceClient:
                 **kwargs,
             )
             return (
-                response.model_dump() if hasattr(response, "model_dump") else dict(response)
+                response.model_dump()
+                if hasattr(response, "model_dump")
+                else dict(response)
             )
 
         except Exception as e:
@@ -978,10 +984,14 @@ class InferenceClient:
                     try:
                         on_iteration_complete(i, result, current_messages)
                     except Exception as e:
-                        print(f"on_iteration_complete callback error (iteration {i + 1}): {e}")
+                        print(
+                            f"on_iteration_complete callback error (iteration {i + 1}): {e}"
+                        )
 
                 if i < number_of_iterations - 1:
-                    current_messages.append({"role": "user", "content": continuation_message})
+                    current_messages.append(
+                        {"role": "user", "content": continuation_message}
+                    )
 
                 _update()
 
@@ -1123,7 +1133,9 @@ class InferenceClient:
                             try:
                                 on_item_complete(i, items[i], result)
                             except Exception as e:
-                                print(f"on_item_complete callback error (item {i}): {e}")
+                                print(
+                                    f"on_item_complete callback error (item {i}): {e}"
+                                )
 
                         _update()
             return results
