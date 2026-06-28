@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.10"
+__generated_with = "0.23.11"
 app = marimo.App(width="full")
 
 with app.setup:
@@ -120,7 +120,6 @@ def _():
 
 @app.cell
 def _():
-    # AstraDB
     astradb_api_endpoint = os.getenv("ASTRA_DB_API_ENDPOINT", "")
     astradb_application_token = os.getenv("ASTRA_DB_APPLICATION_TOKEN", "")
     astradb_keyspace = os.getenv("ASTRA_DB_KEYSPACE", "default_keyspace")
@@ -175,7 +174,9 @@ def _(
         initialize_astradb_database(
             astradb_api_endpoint, astradb_application_token, astradb_keyspace
         )
-        if astradb_api_endpoint and astradb_application_token and astradb_keyspace
+        if astradb_api_endpoint
+        and astradb_application_token
+        and astradb_keyspace
         else None
     )
     return (astradb,)
@@ -212,7 +213,10 @@ def _(
 ):
     mongodb = (
         initialize_mongodb_database(
-            mongodb_endpoint, mongodb_username, mongodb_password, mongodb_cert_path
+            mongodb_endpoint,
+            mongodb_username,
+            mongodb_password,
+            mongodb_cert_path,
         )
         if mongodb_endpoint and mongodb_username and mongodb_password
         else None
@@ -390,7 +394,6 @@ def _():
 
 @app.cell
 def _():
-    # Red Hat AI Inference
     apikey = os.getenv("IBM_CLOUD_API_KEY", "")
     rhai_project_id = os.getenv("RHAI_INF_PROJECT", "")
     rhai_region = os.getenv("RHAI_INF_REGION", "us-east")
@@ -581,7 +584,6 @@ def _():
 
 @app.cell
 def _():
-    # extraction_regex = r"^([\s\S]*?)\d+/\d{4}[\s\S]*?00\d+"
     extraction_regex = r"^([\s\S]*?\S)\s*\d+/\d{4}[\s\S]*?00\d+"
     return (extraction_regex,)
 
@@ -594,11 +596,12 @@ def _():
 @app.cell
 def _(extracted_notices_batch, notice_documents_df):
     expanded_notice_documents_df = (
-        add_notice_titles(
+        add_notice_titles_and_contents(
             df=notice_documents_df,
             notices=extracted_notices_batch,
             id_col="publication_number",
-            out_col="extracted_notice_title",
+            title_col="extracted_notice_title",
+            contents_col="extracted_notice_contents",
             full_id=True,
         )
         if extracted_notices_batch
@@ -608,6 +611,11 @@ def _(extracted_notices_batch, notice_documents_df):
         else notice_documents_df
     )
     expanded_notice_documents_df
+    return
+
+
+@app.cell
+def _():
     return
 
 
@@ -635,6 +643,76 @@ def clean_strings(strings):
         )  # collapse all whitespace (incl. \r\n) to single spaces
         cleaned.append(s)
     return cleaned
+
+
+@app.function
+def add_notice_titles_and_contents(
+    df,
+    notices,
+    id_col="publication_number",
+    title_col="extracted_notice_title",
+    contents_col="extracted_notice_contents",
+    full_id=True,
+    regex=None,
+    title_group=1,
+    id_from_match=None,
+    df_key=None,
+    lengths=(6, 5, 4),
+):
+    """Return a copy of df with title_col/contents_col mapped from notices by id.
+    full_id=True  -> default: match the whole publication number (both halves).
+    full_id=False -> match the first half only (before the dash).
+    Overridable knobs (each falls back to the full_id default when None):
+      regex          : a fixed search pattern. When None (default), the function
+                       instead runs a length cascade over `lengths` and keeps the
+                       first match whose assembled id is a real publication id.
+      title_group    : which group holds the title.
+      id_from_match  : fn(match) -> str key built from the notice text.
+      df_key         : fn(series) -> series, the matching key built from id_col.
+      lengths        : first-half digit lengths to try, in order (6 -> 5 -> 4).
+    """
+    if id_from_match is None:
+        id_from_match = (
+            (lambda m: m.group(2) + m.group(3))
+            if full_id
+            else (lambda m: m.group(2))
+        )
+    if df_key is None:
+        df_key = (
+            (lambda s: s.str.replace("-", "", regex=False))
+            if full_id
+            else (lambda s: s.str.split("-").str[0])
+        )
+    result = df.copy()
+    keys = df_key(result[id_col])
+    valid_ids = set(keys)
+    id_to_title = {}
+    id_to_contents = {}
+    for n in notices:
+        if (
+            regex is not None
+        ):  # user-supplied fixed pattern: single pass, no cascade
+            if m := re.search(regex, n):
+                id_to_title[id_from_match(m)] = m.group(title_group)
+                id_to_contents[id_from_match(m)] = n
+            continue
+        for length in (
+            lengths
+        ):  # try first-half lengths in order, keep first valid id
+            pat = (
+                rf"^([\s\S]*?\S)\s*\d+/\d{{4}}[\s\S]*?00(\d{{{length}}})\xad(\d+)"
+                if full_id
+                else rf"^([\s\S]*?\S)\s*\d+/\d{{4}}[\s\S]*?00(\d{{{length}}})"
+            )
+            if m := re.search(pat, n):
+                key = id_from_match(m)
+                if key in valid_ids:
+                    id_to_title[key] = m.group(title_group)
+                    id_to_contents[key] = n
+                    break
+    result[title_col] = keys.map(id_to_title)
+    result[contents_col] = keys.map(id_to_contents)
+    return result
 
 
 @app.function
@@ -689,9 +767,9 @@ def add_notice_titles(
             if m := re.search(regex, n):
                 id_to_title[id_from_match(m)] = m.group(title_group)
             continue
-        for (
-            length
-        ) in lengths:  # try first-half lengths in order, keep first valid id
+        for length in (
+            lengths
+        ):  # try first-half lengths in order, keep first valid id
             pat = (
                 rf"^([\s\S]*?\S)\s*\d+/\d{{4}}[\s\S]*?00(\d{{{length}}})\xad(\d+)"
                 if full_id
@@ -766,7 +844,8 @@ def run_pattern(strings, pattern, group=0):
     """Run pattern on each string, returning the chosen group (None where no match)."""
     compiled = re.compile(pattern)
     return [
-        m.group(group) if (m := compiled.search(s)) else None for s in strings
+        m.group(group) if (m := compiled.search(s)) else None
+        for s in strings
     ]
 
 
