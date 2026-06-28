@@ -37,3 +37,4 @@ dependencies = [
 
 [tool.marimo.runtime]
 output_max_bytes = 300_000_000_000
+dotenv = [".env"]
